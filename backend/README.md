@@ -1,6 +1,11 @@
 ## Getting Started
 
 ```bash
-uv install
-uv run uvicorn main:app --reload
+uv sync
+
+# 개발 모드
+uv run dev
+
+# 프로덕션 모드
+uv run start
 ```
