@@ -1,0 +1,77 @@
+name: Backend CI/CD
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'backend/**'
+  pull_request:
+    branches: [main]
+    paths:
+      - 'backend/**'
+
+defaults:
+  run:
+    working-directory: backend
+
+jobs:
+  ci:
+    name: Lint · Type Check · Test
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v4
+        with:
+          version: 'latest'
+          enable-cache: true
+          cache-dependency-glob: 'backend/uv.lock'
+          # .python-version 파일을 자동으로 읽어 Python 버전 설치
+
+      - name: Install dependencies
+        run: uv sync --frozen
+
+      - name: Lint (ruff)
+        run: uv run ruff check .
+
+      - name: Type check (mypy)
+        run: uv run mypy .
+
+      - name: Test (pytest)
+        run: uv run pytest --tb=short
+        env:
+          ENV: test
+
+  deploy:
+    name: Deploy to EC2
+    needs: ci
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Deploy via SSH
+        uses: appleboy/ssh-action@v1
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            cd /developers/backend
+
+            # 최신 코드 pull
+            git pull origin main
+
+            # 의존성 업데이트 (uv.lock 기준 동기화)
+            uv sync --frozen
+
+            # 앱 재시작 (systemd 기준)
+            sudo systemctl restart backend
+
+            # PM2 사용 시:
+            # pm2 restart backend
