@@ -30,6 +30,10 @@ indent-width = 4
 quote-style = "single"
 indent-style = "space"
 
+[tool.pytest.ini_options]
+addopts = "--tb=short"
+testpaths = ["tests"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
