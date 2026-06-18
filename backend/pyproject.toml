@@ -11,6 +11,13 @@ dependencies = [
     "uvicorn>=0.49.0",
 ]
 
+[dependency-groups]
+dev = [
+    "ruff>=0.11.0",
+    "mypy>=1.0.0",
+    "pytest>=8.0.0",
+]
+
 [project.scripts]
 dev = "main:start_dev"
 start = "main:start_prod"
