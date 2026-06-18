@@ -2,11 +2,11 @@ name: Backend CI/CD
 
 on:
   push:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - 'backend/**'
   pull_request:
-    branches: [main]
+    branches: [main, develop]
     paths:
       - 'backend/**'
 
@@ -49,7 +49,7 @@ jobs:
     name: Deploy to EC2
     needs: ci
     runs-on: ubuntu-latest
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/main' || github.ref == 'refs/heads/develop')
 
     steps:
       - name: Checkout
