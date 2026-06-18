@@ -7,7 +7,7 @@ from supabase import Client, create_client
 
 app = FastAPI()
 
-_supabase: Client = None
+_supabase: Client | None = None
 
 
 def get_supabase() -> Client:
