@@ -1,8 +1,13 @@
 'use client'
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { ReactQueryDevtools } from '@tanstack/react-query-devtools'
-import { useState } from 'react'
+import { useState, lazy, Suspense } from 'react'
+
+const ReactQueryDevtools = lazy(() =>
+  import('@tanstack/react-query-devtools').then((mod) => ({
+    default: mod.ReactQueryDevtools,
+  }))
+)
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(
@@ -14,14 +19,17 @@ export function Providers({ children }: { children: React.ReactNode }) {
       }),
   )
 
-  console.log('vercel env:', process.env.NEXT_PUBLIC_VERCEL_ENV)
+  const isDevtools =
+    process.env.NODE_ENV === 'development' ||
+    process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview'
 
   return (
     <QueryClientProvider client={queryClient}>
       {children}
-      {(process.env.NODE_ENV === 'development' ||
-        process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview') && (
-        <ReactQueryDevtools initialIsOpen={false} />
+      {isDevtools && (
+        <Suspense fallback={null}>
+          <ReactQueryDevtools initialIsOpen={false} />
+        </Suspense>
       )}
     </QueryClientProvider>
   )
