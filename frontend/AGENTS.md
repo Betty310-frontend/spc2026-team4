@@ -7,3 +7,4 @@ This version has breaking changes — APIs, conventions, and file structure may 
 <!-- END:nextjs-agent-rules -->
 
 @.claude/colors.md
+@.claude/layout.md
