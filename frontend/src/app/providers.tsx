@@ -14,6 +14,8 @@ export function Providers({ children }: { children: React.ReactNode }) {
       }),
   )
 
+  console.log('vercel env:', process.env.NEXT_PUBLIC_VERCEL_ENV)
+
   return (
     <QueryClientProvider client={queryClient}>
       {children}

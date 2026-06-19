@@ -1,27 +1,27 @@
-import { ChatPanel } from "@/components/chat/chat-panel";
-import { KakaoMap } from "@/components/map/kakao-map";
+import { SplitLayout, LeftPanel, RightPanel } from '@/components/layout'
+import { KakaoMap } from '@/components/map/KakaoMap'
+import { ChatPanel } from '@/components/chat/ChatPanel'
 
 export default function Home() {
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <div>
-          <h2 className="text-5xl font-bold text-center sm:text-left">
-            카카오 맵 테스트
-          </h2>
-          <div className="mt-10 w-full">
-            <KakaoMap />
-          </div>
-        </div>
-         <div>
-          <h2 className="text-5xl font-bold text-center sm:text-left">
-            AI 챗 테스트
-          </h2>
-          <div className="mt-10 w-full">
-            <ChatPanel />
-          </div>
-        </div>
-      </main>
-    </div>
-  );
+    <SplitLayout
+      showDisclaimer={true}
+      left={
+        <LeftPanel>
+          <KakaoMap />
+        </LeftPanel>
+      }
+      right={
+        <RightPanel
+          status="idle"
+          messages={
+            <p className="text-[11px] text-[#999]">
+              안녕하세요! 상권 분석을 시작하려면 업종과 위치를 알려주세요.
+            </p>
+          }
+          input={<ChatPanel />}
+        />
+      }
+    />
+  )
 }

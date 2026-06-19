@@ -33,7 +33,7 @@ export function ChatPanel() {
           </div>
         ))}
       </ScrollArea>
-      <form onSubmit={handleSubmit} className="flex gap-2 p-4">
+      <form onSubmit={handleSubmit} className="flex gap-2 p-2">
         <Input
           value={input}
           onChange={(e) => setInput(e.target.value)}
