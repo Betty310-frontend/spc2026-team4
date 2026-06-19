@@ -67,7 +67,7 @@ export default function SplitLayout({
     <div className="flex h-screen flex-col overflow-hidden bg-white">
       <Topbar>{topbarSlot}</Topbar>
 
-      <div ref={containerRef} className="flex flex-1 flex-col-reverse overflow-hidden md:flex-row">
+      <div ref={containerRef} className="flex flex-1 flex-col-reverse overflow-hidden md:flex-row" style={{ visibility: leftWidth == null ? 'hidden' : 'visible' }}>
         {/* 좌측 패널 */}
         <div
           className="min-h-[40vh] flex-shrink-0 overflow-y-auto md:min-h-0"
