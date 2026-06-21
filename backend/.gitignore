@@ -8,6 +8,7 @@ __pycache__/
 dist/
 build/
 *.egg
+*.ruff_cache
 
 # venv
 venv/
@@ -23,3 +24,12 @@ venv/
 
 # Data
 *.csv
+
+# docker volumes
+db_data/
+
+# local-only dev files
+CLAUDE.md
+docker-compose.yml
+docker/
+docs/
