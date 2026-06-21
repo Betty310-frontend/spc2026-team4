@@ -1,14 +1,12 @@
 import json
 import uuid
+from collections.abc import AsyncGenerator
 
-from fastapi import APIRouter
-from fastapi.responses import StreamingResponse
 from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
 from langchain_core.tools import tool
 from langchain_openai import ChatOpenAI
-from pydantic import BaseModel
 
-router = APIRouter()
+from app.dto.chat import UIMessage
 
 _STATION_COORDS: dict[str, dict[str, float]] = {
     '강남역': {'lat': 37.4979, 'lng': 127.0276},
@@ -34,39 +32,6 @@ _SYSTEM = """
 - 이미 분석된 데이터에 대한 질문이나 추가 상담 → 도구 호출 없이 텍스트로만 답변
 """
 
-
-@tool
-def request_analysis_update(station: str, radius: int, category: str) -> str:
-    """
-    사용자가 위치·반경·업종으로 상권 분석을 요청하거나 조건 변경을 원할 때 호출합니다.
-    이미 분석된 결과에 대한 일반 질문에는 호출하지 않습니다.
-    station: 역명 또는 동네 이름 (예: 강남역, 연남동)
-    radius: 분석 반경(미터, 기본값 500)
-    category: 업종명 (예: 카페, 음식점, 미용실)
-    """
-    return 'ok'
-
-
-_llm_intent = None  # tool 바인딩 — 분석 조건 변경 감지용 (non-streaming)
-_llm_text = None  # 순수 텍스트 스트리밍용
-
-
-def get_llm_intent():
-    global _llm_intent
-    if _llm_intent is None:
-        _llm_intent = ChatOpenAI(model='gpt-4o-mini', temperature=0).bind_tools(
-            [request_analysis_update]
-        )
-    return _llm_intent
-
-
-def get_llm_text():
-    global _llm_text
-    if _llm_text is None:
-        _llm_text = ChatOpenAI(model='gpt-4o-mini', temperature=0)
-    return _llm_text
-
-
 _CATEGORY_ICONS: dict[str, str] = {
     '카페': '☕',
     '음식점': '🍽',
@@ -87,28 +52,36 @@ _COMPETITOR_OFFSETS = [
 ]
 
 
-class MessagePart(BaseModel):
-    type: str
-    text: str = ''
-
-    model_config = {'extra': 'allow'}
-
-
-class UIMessage(BaseModel):
-    id: str
-    role: str = 'user'
-    parts: list[MessagePart] = []
-    content: str = ''
-
-    model_config = {'extra': 'allow'}
+@tool
+def request_analysis_update(station: str, radius: int, category: str) -> str:
+    """
+    사용자가 위치·반경·업종으로 상권 분석을 요청하거나 조건 변경을 원할 때 호출합니다.
+    이미 분석된 결과에 대한 일반 질문에는 호출하지 않습니다.
+    station: 역명 또는 동네 이름 (예: 강남역, 연남동)
+    radius: 분석 반경(미터, 기본값 500)
+    category: 업종명 (예: 카페, 음식점, 미용실)
+    """
+    return 'ok'
 
 
-class ChatRequest(BaseModel):
-    id: str = ''
-    messages: list[UIMessage]
-    station: str = '선정릉역'
-    radius: int = 500
-    category: str = '카페'
+_llm_intent = None
+_llm_text = None
+
+
+def get_llm_intent():
+    global _llm_intent
+    if _llm_intent is None:
+        _llm_intent = ChatOpenAI(model='gpt-4o-mini', temperature=0).bind_tools(
+            [request_analysis_update]
+        )
+    return _llm_intent
+
+
+def get_llm_text():
+    global _llm_text
+    if _llm_text is None:
+        _llm_text = ChatOpenAI(model='gpt-4o-mini', temperature=0)
+    return _llm_text
 
 
 async def get_market_data(station: str, radius: int, category: str) -> dict:
@@ -211,12 +184,12 @@ def _build_lc_messages(messages: list[UIMessage], market_data: dict) -> list:
     return lc_messages
 
 
-async def _stream_ui(messages: list[UIMessage], market_data: dict):
+async def stream_ui(
+    messages: list[UIMessage], market_data: dict
+) -> AsyncGenerator[str, None]:
     part_id = uuid.uuid4().hex
     lc_messages = _build_lc_messages(messages, market_data)
 
-    # Step 1: 분석 조건 변경 여부 감지 (non-streaming, tool 바인딩)
-    # tool을 호출하면 텍스트를 생성하지 않으므로 반드시 분리
     intent = await get_llm_intent().ainvoke(lc_messages)
 
     active_data = market_data
@@ -241,7 +214,6 @@ async def _stream_ui(messages: list[UIMessage], market_data: dict):
         yield _sse({'type': 'metrics', 'data': active_data['metrics']})
         yield _sse({'type': 'report', 'data': active_data['report']})
 
-    # Step 2: 텍스트 스트리밍 — 항상 실행, 갱신된 context 사용
     text_messages = _build_lc_messages(messages, active_data)
     yield _sse({'type': 'text-start', 'id': part_id})
     async for chunk in get_llm_text().astream(text_messages):
@@ -250,18 +222,3 @@ async def _stream_ui(messages: list[UIMessage], market_data: dict):
     yield _sse({'type': 'text-end', 'id': part_id})
 
     yield 'data: [DONE]\n\n'
-
-
-@router.post('/v1/chat')
-async def handle_chat(body: ChatRequest) -> StreamingResponse:
-    market_data = await get_market_data(body.station, body.radius, body.category)
-    return StreamingResponse(
-        _stream_ui(body.messages, market_data),
-        media_type='text/event-stream',
-        headers={
-            'Cache-Control': 'no-cache',
-            'Connection': 'keep-alive',
-            'X-Vercel-AI-UI-Message-Stream': 'v1',
-            'X-Accel-Buffering': 'no',
-        },
-    )

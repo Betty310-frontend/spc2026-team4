@@ -9,7 +9,9 @@ dependencies = [
     "langchain>=1.3.9",
     "langchain-openai>=1.3.2",
     "openai>=2.43.0",
+    "pydantic-settings>=2.0.0",
     "python-dotenv>=1.2.2",
+    "sqlalchemy>=2.0.51",
     "supabase>=2.31.0",
     "uvicorn>=0.49.0",
 ]
@@ -22,8 +24,8 @@ dev = [
 ]
 
 [project.scripts]
-dev = "main:start_dev"
-start = "main:start_prod"
+dev = "app.main:start_dev"
+start = "app.main:start_prod"
 
 [tool.ruff]
 line-length = 88
@@ -43,5 +45,5 @@ build-backend = "hatchling.build"
 
 [tool.hatch.build.targets.wheel]
 include = [
-    "main.py",
+    "app/",
 ]
