@@ -12,9 +12,15 @@ class Settings(BaseSettings):
     app_port: int = 8000
 
     openai_api_key: str = ''
+    openai_model_name: str = ''
 
     supabase_url: str = ''
     supabase_key: str = ''
+
+    pg_local_url: str = ''
+    pg_cloud_url: str = ''
+    redis_local_url: str = ''
+    redis_cloud_url: str = ''
 
     public_data_api_key: str = ''
     public_api_key: str = ''

@@ -24,3 +24,12 @@ venv/
 
 # Data
 *.csv
+
+# docker volumes
+db_data/
+
+# local-only dev files
+CLAUDE.md
+docker-compose.yml
+docker/
+docs/
