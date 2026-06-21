@@ -4,7 +4,7 @@ import math
 
 from geoalchemy2 import WKTElement
 from geoalchemy2.types import Geography
-from sqlalchemy import cast, func, select, true
+from sqlalchemy import ColumnElement, cast, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.category_map import CategoryFilter
@@ -25,6 +25,7 @@ async def search_competitors(
     """반경 내 경쟁 업소를 PostGIS ST_DWithin으로 조회한다."""
     point = WKTElement(f'POINT({lng} {lat})', srid=4326)
 
+    cat_cond: ColumnElement[bool]
     if category_filter and category_filter.mid_codes:
         cat_cond = Store.category_mid_code.in_(category_filter.mid_codes)
     elif category_filter and category_filter.large_code:
@@ -69,6 +70,7 @@ async def count_seoul_category(
     category_filter: CategoryFilter | None,
 ) -> int:
     """서울 전체에서 해당 업종 수를 반환한다 (퍼센타일 기준값용)."""
+    cat_cond: ColumnElement[bool]
     if category_filter and category_filter.mid_codes:
         cat_cond = Store.category_mid_code.in_(category_filter.mid_codes)
     elif category_filter and category_filter.large_code:

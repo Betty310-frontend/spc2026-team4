@@ -1,4 +1,5 @@
 from langchain_openai import ChatOpenAI
+from pydantic import SecretStr
 
 from app.core.config import get_settings
 
@@ -13,7 +14,7 @@ def get_llm() -> ChatOpenAI:
     # LLM 인스턴스가 없으면 생성
     if _llm is None:
         _llm = ChatOpenAI(
-            api_key=get_settings().openai_api_key,
+            api_key=SecretStr(get_settings().openai_api_key),
             model=get_settings().openai_model_name,
             temperature=0,
         )

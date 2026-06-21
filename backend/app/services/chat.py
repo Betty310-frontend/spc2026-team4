@@ -6,6 +6,7 @@ from collections.abc import AsyncGenerator
 
 from langchain.agents import create_agent
 from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -43,8 +44,8 @@ def _sse(chunk: dict) -> str:
     return f'data: {json.dumps(chunk, ensure_ascii=False)}\n\n'
 
 
-def _to_lc_messages(messages: list[UIMessage]) -> list:
-    result = []
+def _to_lc_messages(messages: list[UIMessage]) -> list[HumanMessage | AIMessage]:
+    result: list[HumanMessage | AIMessage] = []
     for msg in messages:
         text = next((p.text for p in msg.parts if p.type == 'text'), msg.content)
         if not text:
@@ -85,12 +86,12 @@ def _parse_tool_output(raw) -> dict:
     if isinstance(raw, str):
         try:
             return json.loads(raw)
-        except json.JSONDecodeError, ValueError:
+        except (json.JSONDecodeError, ValueError):
             return {}
     if hasattr(raw, 'content'):
         try:
             return json.loads(raw.content)
-        except json.JSONDecodeError, ValueError, AttributeError:
+        except (json.JSONDecodeError, ValueError, AttributeError):
             return {}
     return {}
 
@@ -105,7 +106,7 @@ async def stream_ui(
     redis: Redis | None = None,
 ) -> AsyncGenerator[str, None]:
     thread_id = conversation_id or uuid.uuid4().hex
-    config: dict = {'configurable': {'thread_id': thread_id}}
+    config: RunnableConfig = {'configurable': {'thread_id': thread_id}}
 
     try:
         tools = make_analysis_tools(db, redis) if db and redis else []
@@ -143,7 +144,7 @@ async def stream_ui(
         yield _sse({'type': 'session', 'thread_id': thread_id})
         yield _sse({'type': 'step', 'label': '질문을 확인하고 있습니다...', 'done': True})
 
-        async for event in agent.astream_events(
+        async for event in agent.astream_events(  # type: ignore[call-overload]
             {'messages': input_messages}, config=config, version='v2'
         ):
             kind = event['event']

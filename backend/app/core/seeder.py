@@ -1,7 +1,7 @@
 import csv
 import time
 from pathlib import Path
-import asyncpg
+import asyncpg  # type: ignore[import-untyped]
 from app.core.database import get_engine
 
 BATCH_SIZE = 5_000
