@@ -1,13 +1,48 @@
 import uvicorn
+from contextlib import asynccontextmanager
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.api.v1.api import router as api_v1_router
 from app.core.config import get_settings
-from app.core.database import get_supabase
+from app.core.database import get_engine, get_supabase, init_engine
+from app.core.redis import init_redis_pool
 
-app = FastAPI()
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    await init_engine()
+    await init_redis_pool()
+
+    # ── 데이터 자동 적재(Seeding) 로직 추가 ────────────────────────────────────
+    from pathlib import Path
+    from app.core.database import get_async_session_factory
+    from app.core.seeder import seed_stores_from_csv
+    from app.services.store import count_seoul_category
+
+    session_factory = get_async_session_factory()
+    async with session_factory() as session:
+        try:
+            total_stores = await count_seoul_category(session, None)
+        except Exception as e:
+            print(f'[DB] 테이블 개수 확인 실패 (테이블이 없을 수 있음): {e}')
+            total_stores = 0
+
+    if total_stores == 0:
+        csv_path = Path(__file__).parent.parent / 'data' / 'sosang_seoul_202603.csv'
+        await seed_stores_from_csv(csv_path)
+    else:
+        print(
+            f'[DB] geo_store 테이블에 이미 {total_stores:,}개의 데이터가 존재합니다. '
+            '시딩을 건너뜁니다.'
+        )
+
+    yield
+    await get_engine().dispose()
+
+
+app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
