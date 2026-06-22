@@ -15,9 +15,9 @@ const ThemeContext = createContext<ThemeContextValue | null>(null);
 
 export function ThemeProvider({ children }: { children: React.ReactNode }) {
   const [themeState, setThemeState] = useState<ThemeName>(() => {
-    if (typeof window === 'undefined') return 'neutral'; // SSR 대비
+    if (typeof window === 'undefined') return 'kakao'; // SSR 대비
     const saved = localStorage.getItem('ui-theme') as ThemeName | null;
-    return saved && THEME_NAMES.includes(saved) ? saved : 'neutral';
+    return saved && THEME_NAMES.includes(saved) ? saved : 'kakao';
   });
   const [modeState, setModeState] = useState<ThemeMode>(() => {
     if (typeof window === 'undefined') return 'light';

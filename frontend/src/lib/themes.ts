@@ -1,4 +1,4 @@
-export type ThemeName = 'neutral' | 'blue' | 'violet' | 'emerald' | 'rose';
+export type ThemeName = 'neutral' | 'blue' | 'violet' | 'emerald' | 'rose' | 'kakao';
 export type ThemeMode = 'light' | 'dark';
 
 type CSSVars = Record<string, string>;
@@ -99,6 +99,24 @@ export const themes: Record<ThemeName, ThemePalette> = {
       '--ring': 'oklch(0.712 0.194 22.652)',
       '--sidebar-primary': 'oklch(0.576 0.215 22.52)',
       '--sidebar-primary-foreground': 'oklch(0.985 0 0)',
+    },
+  },
+  kakao: {
+    label: 'Kakao',
+    swatch: 'oklch(0.924 0.193 103)',                   /* YELLOW[200] #FFE812 */
+    light: {
+      '--primary': 'oklch(0.924 0.193 103)',             /* YELLOW[200] #FFE812 */
+      '--primary-foreground': 'oklch(0.370 0.077 102)', /* YELLOW[900] #4A4200 */
+      '--ring': 'oklch(0.543 0.175 271)',                /* INDIGO[400] #5C5FC4 */
+      '--sidebar-primary': 'oklch(0.924 0.193 103)',
+      '--sidebar-primary-foreground': 'oklch(0.370 0.077 102)',
+    },
+    dark: {
+      '--primary': 'oklch(0.924 0.193 103)',             /* YELLOW[200] — 다크에서도 동일 */
+      '--primary-foreground': 'oklch(0.200 0.050 102)', /* 다크 배경용 더 진한 텍스트 */
+      '--ring': 'oklch(0.662 0.165 270)',                /* INDIGO[400] 밝게 */
+      '--sidebar-primary': 'oklch(0.924 0.193 103)',
+      '--sidebar-primary-foreground': 'oklch(0.200 0.050 102)',
     },
   },
 };
