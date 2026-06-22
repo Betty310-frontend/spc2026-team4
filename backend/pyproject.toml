@@ -20,6 +20,7 @@ dependencies = [
     "supabase>=2.31.0",
     "uvicorn>=0.49.0",
     "greenlet>=3.5.2",
+    "h3>=4.5.0",
 ]
 
 [dependency-groups]
@@ -27,6 +28,7 @@ dev = [
     "ruff>=0.11.0",
     "mypy>=1.0.0",
     "pytest>=8.0.0",
+    "pre-commit>=4.0.0",
 ]
 
 [project.scripts]
@@ -44,6 +46,10 @@ indent-style = "space"
 [tool.pytest.ini_options]
 addopts = "--tb=short"
 testpaths = ["tests"]
+
+[tool.mypy]
+python_version = "3.14"
+ignore_missing_imports = true
 
 [build-system]
 requires = ["hatchling"]

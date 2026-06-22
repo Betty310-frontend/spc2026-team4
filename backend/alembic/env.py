@@ -32,6 +32,7 @@ async def get_url_async() -> str:
     try:
         from sqlalchemy import text
         from sqlalchemy.ext.asyncio import create_async_engine
+
         engine = create_async_engine(settings.pg_local_url)
         async with engine.connect() as conn:
             await conn.execute(text('SELECT 1'))

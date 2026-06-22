@@ -32,7 +32,9 @@ def main() -> None:
     )
     args = parser.parse_args()
 
-    csv_paths = [ROOT / 'data' / f'seoul_sales_{year}.csv' for year in sorted(args.years)]
+    csv_paths = [
+        ROOT / 'data' / f'seoul_sales_{year}.csv' for year in sorted(args.years)
+    ]
     missing = [p for p in csv_paths if not p.exists()]
     if missing:
         for p in missing:

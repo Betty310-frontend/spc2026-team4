@@ -1,43 +1,84 @@
-import uvicorn
 from contextlib import asynccontextmanager
+from pathlib import Path
+
+import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import func, select
 
 from app.api.v1.api import router as api_v1_router
 from app.core.config import get_settings
-from app.core.database import get_engine, get_supabase, init_engine
+from app.core.database import get_engine, init_engine
 from app.core.redis import init_redis_pool
+from app.entities.base import Base
+from app.entities.local_people import LocalPeople
+from app.entities.sales import SeoulSales
+from app.entities.store import Store
+
+DATA_DIR = Path(__file__).parent.parent / 'data'
+
+
+async def _ensure_tables() -> None:
+    engine = get_engine()
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    print('[DB] 테이블 스키마 동기화 완료')
+
+
+async def _count(model) -> int:
+    from app.core.database import get_async_session_factory
+
+    session_factory = get_async_session_factory()
+    async with session_factory() as session:
+        try:
+            return (
+                await session.execute(select(func.count()).select_from(model))
+            ).scalar_one()
+        except Exception:
+            return 0
+
+
+async def _run_seeding() -> None:
+    from app.core.seeder import (
+        seed_local_people_from_csv,
+        seed_sales_from_csv,
+        seed_stores_from_csv,
+    )
+
+    # geo_store
+    store_csv = DATA_DIR / 'sosang_seoul_202603.csv'
+    if await _count(Store) == 0:
+        await seed_stores_from_csv(store_csv)
+    else:
+        print('[SEED] geo_store: 이미 데이터 존재, 스킵')
+
+    # seoul_sales
+    sales_csvs = [DATA_DIR / f'seoul_sales_{y}.csv' for y in (2023, 2024, 2025)]
+    sales_csvs = [p for p in sales_csvs if p.exists()]
+    if sales_csvs and await _count(SeoulSales) == 0:
+        await seed_sales_from_csv(sales_csvs)
+    elif not sales_csvs:
+        print('[SEED] seoul_sales: CSV 파일 없음, 스킵')
+    else:
+        print('[SEED] seoul_sales: 이미 데이터 존재, 스킵')
+
+    # local_people
+    lp_csvs = sorted(DATA_DIR.glob('local_people_*.csv'))
+    if lp_csvs and await _count(LocalPeople) == 0:
+        await seed_local_people_from_csv(lp_csvs)
+    elif not lp_csvs:
+        print('[SEED] local_people: CSV 파일 없음, 스킵')
+    else:
+        print('[SEED] local_people: 이미 데이터 존재, 스킵')
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_engine()
     await init_redis_pool()
-
-    # ── 데이터 자동 적재(Seeding) 로직 추가 ────────────────────────────────────
-    from pathlib import Path
-    from app.core.database import get_async_session_factory
-    from app.core.seeder import seed_stores_from_csv
-    from app.services.store import count_seoul_category
-
-    session_factory = get_async_session_factory()
-    async with session_factory() as session:
-        try:
-            total_stores = await count_seoul_category(session, None)
-        except Exception as e:
-            print(f'[DB] 테이블 개수 확인 실패 (테이블이 없을 수 있음): {e}')
-            total_stores = 0
-
-    if total_stores == 0:
-        csv_path = Path(__file__).parent.parent / 'data' / 'sosang_seoul_202603.csv'
-        await seed_stores_from_csv(csv_path)
-    else:
-        print(
-            f'[DB] geo_store 테이블에 이미 {total_stores:,}개의 데이터가 존재합니다. '
-            '시딩을 건너뜁니다.'
-        )
-
+    await _ensure_tables()
+    await _run_seeding()
     yield
     await get_engine().dispose()
 
@@ -58,13 +99,6 @@ app.include_router(api_v1_router, prefix='/api/v1')
 @app.get('/')
 async def index():
     return {'message': 'Hello World!!!!!!'}
-
-
-@app.get('/test/db/connect')
-async def connect_to_db():
-    supabase = get_supabase()
-    response = supabase.table('test_db').select('*').execute()
-    return response.data
 
 
 def start_dev():

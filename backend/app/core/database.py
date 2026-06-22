@@ -1,5 +1,10 @@
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import (
+    AsyncEngine,
+    AsyncSession,
+    async_sessionmaker,
+    create_async_engine,
+)
 from supabase import Client, create_client
 
 from app.core.config import get_settings
@@ -50,7 +55,9 @@ async def init_engine() -> None:
     print(f'[DB] 로컬 연결 실패: {settings.pg_local_url}')
 
     if not settings.pg_cloud_url:
-        raise RuntimeError('[DB] 로컬 연결 실패 — .env.local에 DATABASE_CLOUD_URL을 설정하세요.')
+        raise RuntimeError(
+            '[DB] 로컬 연결 실패 — .env.local에 DATABASE_CLOUD_URL을 설정하세요.'
+        )
 
     engine = await _try_engine(settings.pg_cloud_url)
     if engine:

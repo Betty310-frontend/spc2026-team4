@@ -8,6 +8,8 @@ __pycache__/
 dist/
 build/
 *.egg
+*.mypy_cache
+*.pytest_cache
 *.ruff_cache
 
 # venv
@@ -33,3 +35,4 @@ CLAUDE.md
 docker-compose.yml
 docker/
 docs/
+data/

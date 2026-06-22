@@ -1,7 +1,5 @@
 """PostGIS 기반 상가 조회 서비스."""
 
-import math
-
 from geoalchemy2 import WKTElement
 from geoalchemy2.types import Geography
 from sqlalchemy import ColumnElement, cast, func, select, true
@@ -11,9 +9,6 @@ from app.core.category_map import CategoryFilter
 from app.entities.local_people import LocalPeople
 from app.entities.sales import SeoulSales
 from app.entities.store import Store
-
-# 서울 면적 (m²) — 경쟁 밀집도 퍼센타일 계산용
-_SEOUL_AREA_M2 = 605_210_000
 
 
 async def search_competitors(
@@ -130,8 +125,12 @@ async def get_monthly_avg_sales(
     )
     row = (await session.execute(stmt)).one()
     return {
-        'monthly_avg_sales_amt': int(row.monthly_avg_amt) if row.monthly_avg_amt else None,
-        'monthly_avg_sales_cnt': int(row.monthly_avg_cnt) if row.monthly_avg_cnt else None,
+        'monthly_avg_sales_amt': int(row.monthly_avg_amt)
+        if row.monthly_avg_amt
+        else None,
+        'monthly_avg_sales_cnt': int(row.monthly_avg_cnt)
+        if row.monthly_avg_cnt
+        else None,
     }
 
 
@@ -154,22 +153,3 @@ async def get_population_flow(
     return {
         'avg_peak_population': round(float(row.avg_pop), 1) if row.avg_pop else None,
     }
-
-
-def calc_competition_percentile(
-    competitor_count: int,
-    radius_m: int,
-    seoul_total: int,
-) -> int:
-    """반경 내 업소 수를 서울 평균 밀도와 비교해 퍼센타일(0~100)로 반환한다.
-
-    100에 가까울수록 경쟁이 높다는 의미.
-    """
-    circle_area = math.pi * radius_m ** 2
-    expected = seoul_total * circle_area / _SEOUL_AREA_M2
-    if expected <= 0:
-        return 50
-    ratio = competitor_count / expected
-    # ratio=1 → 50퍼센타일, ratio=2 → ~75, ratio=0.5 → ~25
-    percentile = int(50 * ratio)
-    return max(0, min(100, percentile))
