@@ -98,12 +98,14 @@ def _parse_tool_output(raw) -> dict:
     if isinstance(raw, str):
         try:
             return json.loads(raw)
-        except (json.JSONDecodeError, ValueError):
+        except ValueError:
             return {}
     if hasattr(raw, 'content'):
         try:
             return json.loads(raw.content)
-        except (json.JSONDecodeError, ValueError, AttributeError):
+        except ValueError:
+            return {}
+        except AttributeError:
             return {}
     return {}
 

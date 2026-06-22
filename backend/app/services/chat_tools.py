@@ -6,16 +6,18 @@ from langchain_core.tools import tool
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.analysis_utils import build_h3_hexagons, calc_competition_percentile
 from app.core.category_map import CATEGORY_ICONS, get_category_filter
 from app.core.geo import resolve_coords
 from app.core.redis import encode_geohash
 from app.services.report import build_report
 from app.services.store import (
-    calc_competition_percentile,
     count_seoul_category,
     get_dong_codes_in_radius,
     get_monthly_avg_sales,
     get_population_flow,
+)
+from app.services.store import (
     search_competitors as _db_search_competitors,
 )
 
@@ -76,19 +78,23 @@ def _build_sources(sales: dict, population: dict) -> list[dict]:
         },
     ]
     if sales.get('monthly_avg_sales_amt') is not None:
-        sources.append({
-            'label': '월평균 추정매출',
-            'provider': '서울시 상권분석서비스',
-            'reference': '2023~2025년 분기',
-            'url': 'https://data.seoul.go.kr/dataList/OA-15572/S/1/datasetView.do',
-        })
+        sources.append(
+            {
+                'label': '월평균 추정매출',
+                'provider': '서울시 상권분석서비스',
+                'reference': '2023~2025년 분기',
+                'url': 'https://data.seoul.go.kr/dataList/OA-15572/S/1/datasetView.do',
+            }
+        )
     if population.get('avg_peak_population') is not None:
-        sources.append({
-            'label': '생활인구',
-            'provider': '서울 열린데이터 광장',
-            'reference': '2026년 5월',
-            'url': 'https://data.seoul.go.kr/dataList/OA-14991/S/1/datasetView.do',
-        })
+        sources.append(
+            {
+                'label': '생활인구',
+                'provider': '서울 열린데이터 광장',
+                'reference': '2026년 5월',
+                'url': 'https://data.seoul.go.kr/dataList/OA-14991/S/1/datasetView.do',
+            }
+        )
     return sources
 
 
@@ -127,7 +133,9 @@ def make_analysis_tools(db: AsyncSession, redis: Redis) -> list:
     """db/redis를 클로저로 캡처한 LangChain 도구 목록을 반환한다."""
 
     @tool
-    async def search_competitors(station: str, category: str, radius: int = 500) -> dict:
+    async def search_competitors(
+        station: str, category: str, radius: int = 500
+    ) -> dict:
         """반경 내 동일 업종 경쟁 업소를 조회하고 경쟁 밀집도를 계산합니다.
 
         Args:
@@ -154,11 +162,13 @@ def make_analysis_tools(db: AsyncSession, redis: Redis) -> list:
         )
         seoul_total = await count_seoul_category(db, cat_filter)
         sales = await get_monthly_avg_sales(
-            db, dong_codes,
+            db,
+            dong_codes,
             cat_filter.sales_service_codes if cat_filter else (),
         )
         population = await get_population_flow(
-            db, dong_codes,
+            db,
+            dong_codes,
             cat_filter.peak_hours if cat_filter else (),
         )
         competitor_count = len(competitors_raw)
@@ -183,13 +193,26 @@ def make_analysis_tools(db: AsyncSession, redis: Redis) -> list:
                 'avg_peak_population': population.get('avg_peak_population'),
             },
             'competitors': [{**c, 'type': 'same'} for c in competitors_raw],
+            'h3_hexagons': build_h3_hexagons(competitors_raw),
             'report': build_report(
-                station, radius, category, competitor_count, competition_percentile,
+                station,
+                radius,
+                category,
+                competitor_count,
+                competition_percentile,
                 monthly_avg_sales_amt=sales.get('monthly_avg_sales_amt'),
                 monthly_avg_sales_cnt=sales.get('monthly_avg_sales_cnt'),
             ),
             'dong_name': primary_dong_name,
-            'scope': _build_scope(station, primary_dong_name, radius, category, cat_filter, sales, population),
+            'scope': _build_scope(
+                station,
+                primary_dong_name,
+                radius,
+                category,
+                cat_filter,
+                sales,
+                population,
+            ),
             'sources': _build_sources(sales, population),
             'tags': [
                 {'label': category, 'icon': CATEGORY_ICONS.get(category, '🏪')},
@@ -197,8 +220,14 @@ def make_analysis_tools(db: AsyncSession, redis: Redis) -> list:
                 {'label': f'반경 {radius}m'},
             ],
             'summary': _build_summary(
-                station, radius, category, competitor_count,
-                competition_percentile, primary_dong_name, sales, population,
+                station,
+                radius,
+                category,
+                competitor_count,
+                competition_percentile,
+                primary_dong_name,
+                sales,
+                population,
             ),
         }
 

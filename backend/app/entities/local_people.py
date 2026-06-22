@@ -1,4 +1,4 @@
-from sqlalchemy import Index, Numeric, SmallInteger, String
+from sqlalchemy import Index, Numeric, String
 from sqlalchemy.orm import Mapped, mapped_column
 
 from app.entities.base import Base
@@ -7,7 +7,7 @@ from app.entities.base import Base
 class LocalPeople(Base):
     __tablename__ = 'local_people'
 
-    date_id: Mapped[str] = mapped_column(String(8), primary_key=True)   # YYYYMMDD
+    date_id: Mapped[str] = mapped_column(String(8), primary_key=True)  # YYYYMMDD
     time_slot: Mapped[str] = mapped_column(String(2), primary_key=True)  # 00~23
     dong_code: Mapped[str] = mapped_column(String(15), primary_key=True)
 

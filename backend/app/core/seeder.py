@@ -108,9 +108,10 @@ def _sales_row_to_tuple(row: dict) -> tuple:
 
 
 async def seed_sales_from_csv(csv_paths: list[Path]) -> None:
-    from app.core.config import get_settings
-    settings = get_settings()
-    db_url = (settings.pg_local_url or settings.pg_cloud_url).replace(
+    from app.core.database import get_engine
+
+    engine = get_engine()
+    db_url = engine.url.render_as_string(hide_password=False).replace(
         'postgresql+asyncpg://', 'postgresql://'
     )
 
@@ -177,17 +178,38 @@ ON CONFLICT (date_id, time_slot, dong_code) DO NOTHING
 """
 
 _LP_COLS = [
-    '기준일ID', '시간대구분', '행정동코드', '총생활인구수',
-    '남자0세부터9세생활인구수', '남자10세부터14세생활인구수', '남자15세부터19세생활인구수',
-    '남자20세부터24세생활인구수', '남자25세부터29세생활인구수', '남자30세부터34세생활인구수',
-    '남자35세부터39세생활인구수', '남자40세부터44세생활인구수', '남자45세부터49세생활인구수',
-    '남자50세부터54세생활인구수', '남자55세부터59세생활인구수', '남자60세부터64세생활인구수',
-    '남자65세부터69세생활인구수', '남자70세이상생활인구수',
-    '여자0세부터9세생활인구수', '여자10세부터14세생활인구수', '여자15세부터19세생활인구수',
-    '여자20세부터24세생활인구수', '여자25세부터29세생활인구수', '여자30세부터34세생활인구수',
-    '여자35세부터39세생활인구수', '여자40세부터44세생활인구수', '여자45세부터49세생활인구수',
-    '여자50세부터54세생활인구수', '여자55세부터59세생활인구수', '여자60세부터64세생활인구수',
-    '여자65세부터69세생활인구수', '여자70세이상생활인구수',
+    '기준일ID',
+    '시간대구분',
+    '행정동코드',
+    '총생활인구수',
+    '남자0세부터9세생활인구수',
+    '남자10세부터14세생활인구수',
+    '남자15세부터19세생활인구수',
+    '남자20세부터24세생활인구수',
+    '남자25세부터29세생활인구수',
+    '남자30세부터34세생활인구수',
+    '남자35세부터39세생활인구수',
+    '남자40세부터44세생활인구수',
+    '남자45세부터49세생활인구수',
+    '남자50세부터54세생활인구수',
+    '남자55세부터59세생활인구수',
+    '남자60세부터64세생활인구수',
+    '남자65세부터69세생활인구수',
+    '남자70세이상생활인구수',
+    '여자0세부터9세생활인구수',
+    '여자10세부터14세생활인구수',
+    '여자15세부터19세생활인구수',
+    '여자20세부터24세생활인구수',
+    '여자25세부터29세생활인구수',
+    '여자30세부터34세생활인구수',
+    '여자35세부터39세생활인구수',
+    '여자40세부터44세생활인구수',
+    '여자45세부터49세생활인구수',
+    '여자50세부터54세생활인구수',
+    '여자55세부터59세생활인구수',
+    '여자60세부터64세생활인구수',
+    '여자65세부터69세생활인구수',
+    '여자70세이상생활인구수',
 ]
 
 
@@ -200,15 +222,15 @@ def _float_or_none(val: str) -> float | None:
 
 def _lp_row_to_tuple(row: dict) -> tuple:
     return tuple(
-        row[c] if i < 3 else _float_or_none(row[c])
-        for i, c in enumerate(_LP_COLS)
+        row[c] if i < 3 else _float_or_none(row[c]) for i, c in enumerate(_LP_COLS)
     )
 
 
 async def seed_local_people_from_csv(csv_paths: list[Path]) -> None:
-    from app.core.config import get_settings
-    settings = get_settings()
-    db_url = (settings.pg_local_url or settings.pg_cloud_url).replace(
+    from app.core.database import get_engine
+
+    engine = get_engine()
+    db_url = engine.url.render_as_string(hide_password=False).replace(
         'postgresql+asyncpg://', 'postgresql://'
     )
 
@@ -246,7 +268,9 @@ async def seed_local_people_from_csv(csv_paths: list[Path]) -> None:
                 total += len(batch)
 
             elapsed = time.time() - start
-            print(f'[SEED] {csv_path.name} 완료: {total:,}행, {skipped}행 스킵, {elapsed:.1f}초')
+            print(
+                f'[SEED] {csv_path.name} 완료: {total:,}행, {skipped}행 스킵, {elapsed:.1f}초'
+            )
     finally:
         await conn.close()
 
@@ -308,7 +332,9 @@ async def seed_stores_from_csv(csv_path: Path) -> None:
         return
 
     engine = get_engine()
-    db_url = engine.url.render_as_string(hide_password=False).replace('postgresql+asyncpg://', 'postgresql://')
+    db_url = engine.url.render_as_string(hide_password=False).replace(
+        'postgresql+asyncpg://', 'postgresql://'
+    )
 
     print(f'[SEED] 데이터 적재 시작: {csv_path.name} -> {db_url.split("@")[-1]}')
 
@@ -333,8 +359,7 @@ async def seed_stores_from_csv(csv_path: Path) -> None:
                     total += len(batch)
                     elapsed = time.time() - start
                     print(
-                        f'[SEED]   {total:>7,}행 삽입 완료 '
-                        f'({total / elapsed:.0f}행/s)'
+                        f'[SEED]   {total:>7,}행 삽입 완료 ({total / elapsed:.0f}행/s)'
                     )
                     batch = []
 

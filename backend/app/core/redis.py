@@ -52,7 +52,7 @@ def get_redis() -> Redis:
 
 def encode_geohash(latitude: float, longitude: float, precision: int = 7) -> str:
     """위/경도를 Geohash 문자열로 인코딩합니다."""
-    base32 = "0123456789bcdefghjkmnpqrstuvwxyz"
+    base32 = '0123456789bcdefghjkmnpqrstuvwxyz'
     lat_interval = (-90.0, 90.0)
     lon_interval = (-180.0, 180.0)
     geohash: list[str] = []
@@ -84,4 +84,4 @@ def encode_geohash(latitude: float, longitude: float, precision: int = 7) -> str
             bits = 0
             ch = 0
 
-    return "".join(geohash)
+    return ''.join(geohash)
