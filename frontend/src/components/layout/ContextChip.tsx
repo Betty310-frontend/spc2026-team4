@@ -1,29 +1,13 @@
-import { CHIP_COLORS, TEXT_SECONDARY } from '@/styles/colors'
-
-type ChipType = '업종' | '위치' | '반경'
-
 interface ContextChipProps {
-  type: ChipType
   label: string
+  dotColor?: string
 }
 
-export default function ContextChip({ type, label }: ContextChipProps) {
-  const color = CHIP_COLORS[type]
-
+export default function ContextChip({ label, dotColor }: ContextChipProps) {
   return (
-    <span
-      className="inline-flex items-center gap-[3px] rounded-full border px-[7px] py-[2px] text-[9.5px] whitespace-nowrap"
-      style={{
-        background: color.bg,
-        borderColor: color.border,
-        color: TEXT_SECONDARY,
-      }}
-    >
-      {color.dot && (
-        <span
-          className="h-[5px] w-[5px] flex-shrink-0 rounded-full"
-          style={{ background: color.dot }}
-        />
+    <span className="border-border bg-muted text-muted-foreground inline-flex items-center gap-1.5 rounded-full border px-2.5 py-0.5 text-xs whitespace-nowrap">
+      {dotColor && (
+        <span className="h-1.5 w-1.5 flex-shrink-0 rounded-full" style={{ background: dotColor }} />
       )}
       {label}
     </span>
