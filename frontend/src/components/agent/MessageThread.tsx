@@ -1,18 +1,17 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { Message } from '@/types/agent'
+import { ChatMessage } from '@/types/message'
 import { MessageBubble } from './MessageBubble'
-import { QuickStartButtons } from './QuickStartButtons'
+import { ToolCallCard } from './ToolCallCard'
 
 interface MessageThreadProps {
-  messages: Message[]
-  onQuickStart: (text: string) => void
+  messages: ChatMessage[]
+  onConfirmAction?: (action: string) => void
 }
 
-export function MessageThread({ messages, onQuickStart }: MessageThreadProps) {
+export function MessageThread({ messages, onConfirmAction }: MessageThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
-  const hasUserMessage = messages.some((m) => m.role === 'user')
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -20,14 +19,18 @@ export function MessageThread({ messages, onQuickStart }: MessageThreadProps) {
 
   return (
     <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-3 py-3">
-      {messages.map((msg, i) => (
-        <div key={msg.id}>
-          <MessageBubble role={msg.role} content={msg.content} />
-          {i === 0 && msg.role === 'agent' && !hasUserMessage && (
-            <QuickStartButtons onSelect={onQuickStart} />
-          )}
-        </div>
-      ))}
+      {messages.map((msg) => {
+        if (msg.role === 'tool') {
+          return <ToolCallCard key={msg.id} message={msg} />
+        }
+        return (
+          <MessageBubble
+            key={msg.id}
+            message={msg}
+            onConfirmAction={onConfirmAction}
+          />
+        )
+      })}
       <div ref={bottomRef} />
     </div>
   )
