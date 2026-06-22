@@ -22,7 +22,19 @@ _SYSTEM = """
 - 사용자가 업종·위치를 처음 언급하거나 변경하면 반드시 search_competitors 도구를 호출해라.
 - 이미 분석된 결과에 대한 질문이나 추가 설명 요청은 도구 없이 답해라.
 - 위치 추출: 역명·동네명만 station으로. 예: "선정릉역 4번 출구" → "선정릉역", "홍대 근처" → "홍대입구역"
-- 업종 정규화: 예: "커피숍" → "카페", "헤어샵" → "미용실", "식당" → "음식점"
+- 업종 정규화: 아래 표에 있는 변환만 허용하고, 없으면 그대로 사용해라. 임의로 상위 카테고리로 올리지 마라.
+  커피숍·커피·카페테리아 → 카페 / 헤어샵·헤어·미용·이용원 → 미용실 / 식당·밥집 → 음식점
+  분식집·떡볶이 → 분식 / 치킨집·후라이드치킨 → 치킨 / 술집·호프·바 → 주점
+  베이커리·빵집 → 제과점 / 병원·내과·소아과·피부과 → 의원
+- 위치 제한: 서울지역이 아니면 "서울 지역만 분석 가능"이라고 안내하고 도구 호출 없이 답할것.
+
+[도구 결과 해석 규칙]
+- summary 필드를 반드시 읽고 행정동·경쟁업체 수·경쟁 밀집도·월평균 매출을 응답에 포함해라.
+- dong_name 필드가 있으면 "해당 위치는 {dong_name}에 속합니다"로 먼저 알려줘라.
+- monthly_avg_sales_amt가 있으면 "행정동 월평균 추정매출 X원"으로 반드시 언급해라. 단위는 만원으로 변환해서 읽기 쉽게 표현해라.
+- monthly_avg_sales_cnt가 있으면 "월 X건 거래"로 함께 언급해라.
+- avg_peak_population이 있으면 "핵심 시간대 평균 생활인구 X명"으로 언급해라.
+- 매출·생활인구 데이터가 null이면 언급하지 마라.
 
 [응답 규칙]
 - 도구 결과 데이터만 근거로 삼아라. 데이터 외 추정은 "데이터가 없어 확인할 수 없습니다"로 답해라.
@@ -142,7 +154,9 @@ async def stream_ui(
         tools_called: list[str] = []
 
         yield _sse({'type': 'session', 'thread_id': thread_id})
-        yield _sse({'type': 'step', 'label': '질문을 확인하고 있습니다...', 'done': True})
+        yield _sse(
+            {'type': 'step', 'label': '질문을 확인하고 있습니다...', 'done': True}
+        )
 
         async for event in agent.astream_events(  # type: ignore[call-overload]
             {'messages': input_messages}, config=config, version='v2'
@@ -154,28 +168,41 @@ async def stream_ui(
                 tools_called.append(tool_name)
                 step_label = _TOOL_STEP.get(tool_name, '데이터 조회 중...')
                 yield _sse({'type': 'step', 'label': step_label, 'done': False})
-                yield _sse({
-                    'type': 'tool-start',
-                    'tool': tool_name,
-                    'input': event['data'].get('input', {}),
-                })
+                yield _sse(
+                    {
+                        'type': 'tool-start',
+                        'tool': tool_name,
+                        'input': event['data'].get('input', {}),
+                    }
+                )
 
             elif kind == 'on_tool_end':
                 tool_name = event['name']
                 output = _parse_tool_output(event['data'].get('output'))
                 if 'metrics' in output:
-                    yield _sse({'type': 'step', 'label': '시각화 데이터 생성 중...', 'done': False})
+                    yield _sse(
+                        {
+                            'type': 'step',
+                            'label': '시각화 데이터 생성 중...',
+                            'done': False,
+                        }
+                    )
                     yield _sse({'type': 'tags', 'data': output.get('tags', [])})
-                    yield _sse({
-                        'type': 'map',
-                        'data': {
-                            'center': output.get('coords', {}),
-                            'radius': output.get('radius', 500),
-                            'competitors': output.get('competitors', []),
-                        },
-                    })
+                    yield _sse(
+                        {
+                            'type': 'map',
+                            'data': {
+                                'center': output.get('coords', {}),
+                                'radius': output.get('radius', 500),
+                                'competitors': output.get('competitors', []),
+                                'dong_name': output.get('dong_name'),
+                            },
+                        }
+                    )
                     yield _sse({'type': 'metrics', 'data': output.get('metrics', {})})
                     yield _sse({'type': 'report', 'data': output.get('report', {})})
+                    yield _sse({'type': 'sources', 'data': output.get('sources', [])})
+                    yield _sse({'type': 'scope', 'data': output.get('scope', {})})
                 step_label = _TOOL_STEP.get(tool_name, '데이터 조회 중...')
                 yield _sse({'type': 'step', 'label': step_label, 'done': True})
                 yield _sse({'type': 'tool-end', 'tool': tool_name})
@@ -185,7 +212,9 @@ async def stream_ui(
                 content = chunk.content if hasattr(chunk, 'content') else ''
                 if content:
                     if not text_started:
-                        yield _sse({'type': 'step', 'label': '답변 생성 중...', 'done': False})
+                        yield _sse(
+                            {'type': 'step', 'label': '답변 생성 중...', 'done': False}
+                        )
                         yield _sse({'type': 'text-start', 'id': part_id})
                         text_started = True
                     text_buffer.append(content)
