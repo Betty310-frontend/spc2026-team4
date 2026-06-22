@@ -6,7 +6,6 @@ import ResizeHandle from './ResizeHandle'
 import { SURFACE_MUTED, TEXT_MUTED } from '@/styles/colors'
 
 interface SplitLayoutProps {
-  topbarSlot?: ReactNode
   left: ReactNode
   right: ReactNode
   showDisclaimer?: boolean
@@ -15,12 +14,7 @@ interface SplitLayoutProps {
 const RIGHT_PANEL_MIN = 200
 const LEFT_PANEL_MIN = 360
 
-export default function SplitLayout({
-  topbarSlot,
-  left,
-  right,
-  showDisclaimer = false,
-}: SplitLayoutProps) {
+export default function SplitLayout({ left, right, showDisclaimer = false }: SplitLayoutProps) {
   const containerRef = useRef<HTMLDivElement>(null)
   const [leftWidth, setLeftWidth] = useState<number | null>(null)
   const isDragging = useRef(false)
@@ -66,9 +60,13 @@ export default function SplitLayout({
 
   return (
     <div className="flex h-screen flex-col overflow-hidden bg-white">
-      <Topbar>{topbarSlot}</Topbar>
+      <Topbar />
 
-      <div ref={containerRef} className="flex flex-1 flex-col-reverse overflow-hidden md:flex-row" style={{ visibility: leftWidth == null ? 'hidden' : 'visible' }}>
+      <div
+        ref={containerRef}
+        className="flex flex-1 flex-col-reverse overflow-hidden md:flex-row"
+        style={{ visibility: leftWidth == null ? 'hidden' : 'visible' }}
+      >
         {/* 좌측 패널 */}
         <div
           className="min-h-[40vh] flex-shrink-0 overflow-y-auto md:min-h-0"
