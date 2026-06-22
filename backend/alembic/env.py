@@ -10,6 +10,8 @@ from alembic import context
 from app.core.config import get_settings
 from app.entities.base import Base  # noqa: F401
 from app.entities.store import Store  # noqa: F401
+from app.entities.sales import SeoulSales  # noqa: F401
+from app.entities.local_people import LocalPeople  # noqa: F401
 
 config = context.config
 
