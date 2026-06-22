@@ -3,6 +3,7 @@
 import { ReactNode, useRef, useState, useCallback, useEffect } from 'react'
 import Topbar from './Topbar'
 import ResizeHandle from './ResizeHandle'
+import { SURFACE_MUTED, TEXT_MUTED } from '@/styles/colors'
 
 interface SplitLayoutProps {
   topbarSlot?: ReactNode
@@ -94,7 +95,10 @@ export default function SplitLayout({
       </div>
 
       {showDisclaimer && (
-        <div className="flex-shrink-0 border-t border-black/[0.11] bg-[#f7f7f5] px-3 py-[6px] text-[8.5px] leading-relaxed text-[#999]">
+        <div
+          className="flex-shrink-0 border-t border-black/[0.11] px-3 py-[6px] text-[8.5px] leading-relaxed"
+          style={{ background: SURFACE_MUTED, color: TEXT_MUTED }}
+        >
           이 서비스는 창업 리스크 해석을 위한 참고 자료를 제공합니다. 성공을 보장하지 않으며,
           재무·법률 조언이 아닙니다. 분석 결과는 공공 데이터 기준이며 실제와 다를 수 있습니다.
         </div>

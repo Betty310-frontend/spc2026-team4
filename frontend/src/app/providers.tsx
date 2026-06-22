@@ -2,6 +2,8 @@
 
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { useState, lazy, Suspense } from 'react'
+import { ThemeProvider } from '@/components/theme-provider'
+import { TooltipProvider } from '@/components/ui/tooltip'
 
 const ReactQueryDevtools = lazy(() =>
   import('@tanstack/react-query-devtools').then((mod) => ({
@@ -24,13 +26,17 @@ export function Providers({ children }: { children: React.ReactNode }) {
     process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview'
 
   return (
-    <QueryClientProvider client={queryClient}>
-      {children}
-      {isDevtools && (
-        <Suspense fallback={null}>
-          <ReactQueryDevtools initialIsOpen={false} />
-        </Suspense>
-      )}
-    </QueryClientProvider>
+    <ThemeProvider>
+      <TooltipProvider>
+        <QueryClientProvider client={queryClient}>
+          {children}
+          {isDevtools && (
+            <Suspense fallback={null}>
+              <ReactQueryDevtools initialIsOpen={false} />
+            </Suspense>
+          )}
+        </QueryClientProvider>
+      </TooltipProvider>
+    </ThemeProvider>
   )
 }

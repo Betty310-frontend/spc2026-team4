@@ -19,7 +19,7 @@ export function ThemeSwitcher() {
             onClick={() => setTheme(name)}
             title={themes[name].label}
             className={cn(
-              'relative h-7 w-7 rounded-full transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
+              'relative h-7 w-7 cursor-pointer rounded-full transition-transform hover:scale-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-ring',
               theme === name && 'ring-2 ring-offset-2 ring-ring ring-offset-card'
             )}
             style={{ background: themes[name].swatch }}

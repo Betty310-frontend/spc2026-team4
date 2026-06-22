@@ -1,4 +1,4 @@
-import { CHIP_COLORS } from '@/styles/colors'
+import { CHIP_COLORS, TEXT_SECONDARY } from '@/styles/colors'
 
 type ChipType = '업종' | '위치' | '반경'
 
@@ -16,7 +16,7 @@ export default function ContextChip({ type, label }: ContextChipProps) {
       style={{
         background: color.bg,
         borderColor: color.border,
-        color: '#555',
+        color: TEXT_SECONDARY,
       }}
     >
       {color.dot && (

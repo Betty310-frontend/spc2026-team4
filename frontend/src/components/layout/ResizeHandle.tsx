@@ -1,12 +1,22 @@
+'use client'
+
+import { useState } from 'react'
+import { INDIGO, BORDER_SUBTLE } from '@/styles/colors'
+
 interface ResizeHandleProps {
   onMouseDown: () => void
 }
 
 export default function ResizeHandle({ onMouseDown }: ResizeHandleProps) {
+  const [isHovered, setIsHovered] = useState(false)
+
   return (
     <div
       onMouseDown={onMouseDown}
-      className="group relative h-full w-[4px] flex-shrink-0 cursor-col-resize bg-black/[0.11] transition-colors duration-150 hover:bg-[#5C5FC4]"
+      onMouseEnter={() => setIsHovered(true)}
+      onMouseLeave={() => setIsHovered(false)}
+      className="group relative h-full w-[4px] flex-shrink-0 cursor-col-resize transition-colors duration-150"
+      style={{ background: isHovered ? INDIGO[400] : BORDER_SUBTLE }}
       role="separator"
       aria-orientation="vertical"
       aria-label="패널 너비 조절"

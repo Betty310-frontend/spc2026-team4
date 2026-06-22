@@ -1,12 +1,13 @@
 import { ReactNode } from 'react'
+import { AGENT_STATUS_COLORS, TEXT_MUTED } from '@/styles/colors'
 
 export type AgentStatus = 'idle' | 'analyzing' | 'done' | 'chatting'
 
 const STATUS_CONFIG: Record<AgentStatus, { label: string; dotColor: string }> = {
-  idle: { label: '대기 중', dotColor: '#639922' },
-  analyzing: { label: '분석 중', dotColor: '#BA7517' },
-  done: { label: '분석 완료', dotColor: '#639922' },
-  chatting: { label: '대화 중', dotColor: '#639922' },
+  idle:      { label: '대기 중',   dotColor: AGENT_STATUS_COLORS.idle },
+  analyzing: { label: '분석 중',   dotColor: AGENT_STATUS_COLORS.analyzing },
+  done:      { label: '분석 완료', dotColor: AGENT_STATUS_COLORS.done },
+  chatting:  { label: '대화 중',   dotColor: AGENT_STATUS_COLORS.chatting },
 }
 
 interface RightPanelProps {
@@ -23,7 +24,7 @@ export default function RightPanel({ status, messages, input }: RightPanelProps)
       {/* 에이전트 헤더 */}
       <div className="mb-2 flex flex-shrink-0 items-center justify-between border-b border-black/[0.11] pb-[6px]">
         <span className="text-[10px] font-medium text-gray-900">AI 에이전트</span>
-        <span className="flex items-center gap-[3px] text-[9px] text-[#999]">
+        <span className="flex items-center gap-[3px] text-[9px]" style={{ color: TEXT_MUTED }}>
           <span
             className="h-[5px] w-[5px] flex-shrink-0 rounded-full"
             style={{ background: dotColor }}
