@@ -373,3 +373,223 @@ async def seed_stores_from_csv(csv_path: Path) -> None:
         print(f'[SEED] 적재 실패: {e}')
     finally:
         await conn.close()
+
+# 생활 인구 데이터 월별 합계 적재
+import csv
+import os
+import shutil
+import time
+import zipfile
+from pathlib import Path
+
+from supabase import create_client
+
+POPULATION_FLOW_BATCH_SIZE = 1_000
+
+
+def _clean_key(key) -> str:
+    if key is None:
+        return ''
+
+    return (
+        str(key)
+        .replace('\ufeff', '')
+        .replace('?', '')
+        .replace('"', '')
+        .strip()
+    )
+
+
+def _clean_row(row: dict) -> dict:
+    cleaned = {}
+
+    for key, value in row.items():
+        clean_key = _clean_key(key)
+
+        # 컬럼 개수 초과, 깨진 컬럼, 빈 컬럼명 제거
+        if not clean_key:
+            continue
+
+        cleaned[clean_key] = value
+
+    return cleaned
+
+
+def _open_csv_reader(csv_path: Path):
+    encodings = ['utf-8-sig', 'cp949', 'euc-kr']
+
+    for encoding in encodings:
+        try:
+            f = csv_path.open(encoding=encoding, newline='')
+            reader = csv.DictReader(f)
+
+            fieldnames = [_clean_key(c) for c in (reader.fieldnames or [])]
+
+            has_required_columns = (
+                ('STDR_DE_ID' in fieldnames or '기준일ID' in fieldnames)
+                and ('TMZON_PD_SE' in fieldnames or '시간대구분' in fieldnames)
+                and ('ADSTRD_CODE_SE' in fieldnames or '행정동코드' in fieldnames)
+                and ('TOT_LVPOP_CO' in fieldnames or '총생활인구수' in fieldnames)
+            )
+
+            if has_required_columns:
+                print(f'[SEED] 인코딩 감지: {encoding}')
+                return f, reader
+
+            f.close()
+
+        except UnicodeDecodeError:
+            continue
+
+    raise RuntimeError(f'[SEED] CSV 인코딩/헤더 확인 실패: {csv_path}')
+
+
+def _get(row: dict, *keys: str):
+    for key in keys:
+        value = row.get(key)
+
+        if value not in (None, ''):
+            return value
+
+    return None
+
+
+def _month_from_zip_name(zip_path: Path) -> str:
+    # LOCAL_PEOPLE_DONG_202512.zip -> 202512
+    return zip_path.stem.split('_')[-1]
+
+
+def _extract_zip(zip_path: Path, tmp_dir: Path) -> list[Path]:
+    tmp_dir.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(zip_path, 'r') as zf:
+        zf.extractall(tmp_dir)
+
+    csv_files = sorted(tmp_dir.rglob('*.csv'))
+
+    if not csv_files:
+        raise FileNotFoundError(f'[SEED] ZIP 안에 CSV가 없습니다: {zip_path}')
+
+    return csv_files
+
+
+def _build_monthly_sum(csv_path: Path) -> tuple[list[dict], int]:
+    """
+    CSV 원본 일별 데이터에서
+    base_month + time_slot + dong_code 단위로 총생활인구수 합계를 만든다.
+
+    결측치/형변환 실패 행은 제외한다.
+    """
+
+    summary: dict[tuple[str, int, str], float] = {}
+    skipped = 0
+
+    f, reader = _open_csv_reader(csv_path)
+
+    try:
+        for row in reader:
+            row = _clean_row(row)
+
+            stdr_de_id = _get(row, 'STDR_DE_ID', '기준일ID')
+            time_slot = _get(row, 'TMZON_PD_SE', '시간대구분')
+            dong_code = _get(row, 'ADSTRD_CODE_SE', '행정동코드')
+            total = _get(row, 'TOT_LVPOP_CO', '총생활인구수')
+
+            # 결측치 제외
+            if not all([stdr_de_id, time_slot, dong_code, total]):
+                skipped += 1
+                continue
+
+            try:
+                base_month = str(stdr_de_id).strip()[:6]
+                time_slot_int = int(str(time_slot).strip())
+                dong_code_str = str(dong_code).strip()
+                total_float = float(str(total).replace(',', '').strip())
+            except (ValueError, TypeError):
+                skipped += 1
+                continue
+
+            # 비정상 값 제외
+            if len(base_month) != 6 or not (0 <= time_slot_int <= 23):
+                skipped += 1
+                continue
+
+            key = (base_month, time_slot_int, dong_code_str)
+            summary[key] = summary.get(key, 0.0) + total_float
+
+    finally:
+        f.close()
+
+    records = [
+        {
+            'base_month': base_month,
+            'time_slot': time_slot,
+            'dong_code': dong_code,
+            'total_population': round(total_population, 4),
+        }
+        for (base_month, time_slot, dong_code), total_population in summary.items()
+    ]
+
+    return records, skipped
+
+
+async def seed_population_flow_from_zips(zip_paths: list[Path]) -> None:
+    supabase_url = os.getenv('SUPABASE_URL')
+    supabase_key = os.getenv('SUPABASE_KEY')
+
+    if not supabase_url or not supabase_key:
+        print('[SEED] 오류: SUPABASE_URL 또는 SUPABASE_KEY가 없습니다.')
+        return
+
+    supabase = create_client(supabase_url, supabase_key)
+
+    for zip_path in zip_paths:
+        print(f'[SEED] 생활인구 월별 합계 적재 시작: {zip_path.name}')
+
+        tmp_dir = zip_path.parent / f'_tmp_{zip_path.stem}'
+        start = time.time()
+        total_records = 0
+        total_skipped = 0
+        success = False
+
+        try:
+            csv_files = _extract_zip(zip_path, tmp_dir)
+
+            for csv_path in csv_files:
+                records, skipped = _build_monthly_sum(csv_path)
+                total_skipped += skipped
+
+                print(
+                    f'[SEED] 집계 결과: {len(records):,}건 '
+                    f'/ 스킵: {skipped:,}건'
+                )
+
+                for i in range(0, len(records), POPULATION_FLOW_BATCH_SIZE):
+                    batch = records[i:i + POPULATION_FLOW_BATCH_SIZE]
+
+                    supabase.schema('public').table('population_flow').upsert(
+                        batch,
+                        on_conflict='base_month,time_slot,dong_code',
+                    ).execute()
+
+                    total_records += len(batch)
+
+            success = True
+            elapsed = time.time() - start
+
+            print(
+                f'[SEED] {zip_path.name} 완료: '
+                f'{total_records:,}건 적재, '
+                f'{total_skipped:,}건 스킵, '
+                f'{elapsed:.1f}초'
+            )
+
+        finally:
+            if tmp_dir.exists():
+                shutil.rmtree(tmp_dir)
+                print(f'[SEED] 임시 폴더 삭제 완료: {tmp_dir.name}')
+
+            # 성공한 경우에만 ZIP 삭제
+            if success and zip_path.exists():
+                zip_path.unlink()
+                print(f'[SEED] ZIP 삭제 완료: {zip_path.name}')
