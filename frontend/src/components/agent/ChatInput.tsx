@@ -1,28 +1,23 @@
 'use client'
 
-import { KeyboardEvent, useState } from 'react'
+import { KeyboardEvent } from 'react'
 import { ArrowUp } from 'lucide-react'
 import { Input } from '@/components/ui/input'
 import { Button } from '@/components/ui/button'
 
 interface ChatInputProps {
-  onSend: (text: string) => void
+  value: string
+  onChange: (value: string) => void
+  onSend: () => void
   disabled?: boolean
+  placeholder?: string
 }
 
-export function ChatInput({ onSend, disabled }: ChatInputProps) {
-  const [value, setValue] = useState('')
-
-  const handleSend = () => {
-    if (!value.trim()) return
-    onSend(value.trim())
-    setValue('')
-  }
-
+export function ChatInput({ value, onChange, onSend, disabled, placeholder }: ChatInputProps) {
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
-      handleSend()
+      onSend()
     }
   }
 
@@ -30,15 +25,15 @@ export function ChatInput({ onSend, disabled }: ChatInputProps) {
     <div className="flex flex-shrink-0 items-center gap-2 border-t px-3 pb-3 pt-3">
       <Input
         value={value}
-        onChange={(e) => setValue(e.target.value)}
+        onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
-        placeholder="업종과 위치를 입력하세요…"
+        placeholder={placeholder ?? '업종과 위치를 입력하세요…'}
         disabled={disabled}
         className="flex-1 text-sm"
       />
       <Button
         size="icon-sm"
-        onClick={handleSend}
+        onClick={onSend}
         disabled={disabled || !value.trim()}
         aria-label="전송"
       >

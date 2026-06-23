@@ -1,5 +1,6 @@
 import { Button } from '@/components/ui/button'
 import { AgentMessage, UserMessage } from '@/types/message'
+import { AgentMarkdown } from './AgentMarkdown'
 
 interface MessageBubbleProps {
   message: UserMessage | AgentMessage
@@ -23,7 +24,7 @@ export function MessageBubble({ message, isStreaming, onConfirmAction }: Message
     <div className="flex flex-col items-start">
       <span className="mb-1 text-[10px] text-muted-foreground">에이전트</span>
       <div className="max-w-[93%] self-start rounded-2xl rounded-tl-sm bg-muted px-3 py-2 text-sm leading-relaxed text-foreground">
-        <span className="whitespace-pre-line">{message.content}</span>
+        <AgentMarkdown content={message.content} />
         {isStreaming && (
           <span className="ml-0.5 inline-block h-3.5 w-0.5 animate-pulse bg-foreground align-middle" />
         )}

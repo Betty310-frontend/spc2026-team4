@@ -5,6 +5,7 @@ import { useState, lazy, Suspense } from 'react'
 import { ThemeProvider } from '@/components/theme-provider'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { AnalysisContextProvider } from '@/store/analysisContext'
+import { AnalysisResultProvider } from '@/store/analysisResult'
 
 const ReactQueryDevtools = lazy(() =>
   import('@tanstack/react-query-devtools').then((mod) => ({
@@ -26,19 +27,21 @@ export function Providers({ children }: { children: React.ReactNode }) {
     process.env.NODE_ENV === 'development' || process.env.NEXT_PUBLIC_VERCEL_ENV === 'preview'
 
   return (
-    <AnalysisContextProvider>
-      <ThemeProvider>
-        <TooltipProvider>
-          <QueryClientProvider client={queryClient}>
-            {children}
-            {isDevtools && (
-              <Suspense fallback={null}>
-                <ReactQueryDevtools initialIsOpen={false} />
-              </Suspense>
-            )}
-          </QueryClientProvider>
-        </TooltipProvider>
-      </ThemeProvider>
-    </AnalysisContextProvider>
+    <AnalysisResultProvider>
+      <AnalysisContextProvider>
+        <ThemeProvider>
+          <TooltipProvider>
+            <QueryClientProvider client={queryClient}>
+              {children}
+              {isDevtools && (
+                <Suspense fallback={null}>
+                  <ReactQueryDevtools initialIsOpen={false} />
+                </Suspense>
+              )}
+            </QueryClientProvider>
+          </TooltipProvider>
+        </ThemeProvider>
+      </AnalysisContextProvider>
+    </AnalysisResultProvider>
   )
 }

@@ -8,9 +8,10 @@ import { ToolCallCard } from './ToolCallCard'
 interface MessageThreadProps {
   messages: ChatMessage[]
   onConfirmAction?: (action: string) => void
+  isStreaming?: boolean
 }
 
-export function MessageThread({ messages, onConfirmAction }: MessageThreadProps) {
+export function MessageThread({ messages, onConfirmAction, isStreaming }: MessageThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -19,14 +20,18 @@ export function MessageThread({ messages, onConfirmAction }: MessageThreadProps)
 
   return (
     <div className="flex flex-1 flex-col gap-3 overflow-y-auto px-3 py-3">
-      {messages.map((msg) => {
+      {messages.map((msg, i) => {
+        const isLastMsg = i === messages.length - 1
+
         if (msg.role === 'tool') {
           return <ToolCallCard key={msg.id} message={msg} />
         }
+
         return (
           <MessageBubble
             key={msg.id}
             message={msg}
+            isStreaming={isStreaming && isLastMsg && msg.role === 'agent'}
             onConfirmAction={onConfirmAction}
           />
         )
