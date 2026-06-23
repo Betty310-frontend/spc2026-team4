@@ -22,7 +22,8 @@ export function useMockAnalysis() {
   const [mapOptions, setMapOptions] = useState<MapOptions | null>(null)
   const [isLoading, setIsLoading] = useState(false)
 
-  const runMockAnalysis = async () => {
+  // count: 경쟁업체 수 (기본 5, 클러스터 테스트 시 50 이상)
+  const runMockAnalysis = async (count = 5) => {
     setIsLoading(true)
 
     setAnalysisContext({ industry: '카페', location: '연남동', radius: 500 })
@@ -32,7 +33,7 @@ export function useMockAnalysis() {
     updateMetric('density', { status: 'loading' })
 
     const [comp, pop, density] = await Promise.all([
-      fetch('/api/mock/competitors').then((r) => r.json()) as Promise<CompetitorsResponse>,
+      fetch(`/api/mock/competitors?count=${count}`).then((r) => r.json()) as Promise<CompetitorsResponse>,
       fetch('/api/mock/population').then((r) => r.json()) as Promise<PopulationResponse>,
       fetch('/api/mock/competition-percentile').then(
         (r) => r.json(),

@@ -5,6 +5,10 @@ export interface Competitor {
   lat: number
   lng: number
   type: 'same' | 'similar'
+  // 업종 분류 — 아이콘·툴팁 표시용
+  indsLclsNm?: string // 대분류 (예: "음식")
+  indsMclsNm?: string // 중분류 (예: "카페")
+  indsSclsNm?: string // 소분류 (예: "커피전문점")
 }
 
 export interface CompetitorsResponse {

@@ -1,9 +1,15 @@
 'use client'
 
-import { Map, Circle, CustomOverlayMap } from 'react-kakao-maps-sdk'
+import { Map, Circle, useMap } from 'react-kakao-maps-sdk'
+import { useState, useCallback, useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
 import useKakaoLoader from '@/hooks/use-kakao-loader'
+import { useCompetitorClusterer } from '@/hooks/use-competitor-clusterer'
+import { CandidatePin } from './CandidatePin'
+import { CompetitorMarker } from './CompetitorMarker'
 import { KakaoMapProps } from '@/types/map'
+import { Competitor } from '@/types/api'
+import { CLUSTER_THRESHOLD, CLUSTER_MIN_LEVEL } from '@/constants/map'
 
 const SEOUL_CENTER = { lat: 37.5665, lng: 126.978 }
 
@@ -13,19 +19,56 @@ const MARKER_COLOR = {
   similar: '#EF9F27',
 } as const
 
+// ClustererLayer: Map 내부에서만 useMap() 호출 가능 — Map 자식으로 배치
+// clusterMode=false 시 useCompetitorClusterer 내부에서 즉시 cleanup
+function ClustererLayer({
+  competitors,
+  clusterMode,
+}: {
+  competitors: Competitor[]
+  clusterMode: boolean
+}) {
+  const map = useMap('ClustererLayer')
+  useCompetitorClusterer(map, competitors, clusterMode)
+  return null
+}
+
 export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
   const [sdkLoading] = useKakaoLoader()
 
   // 우선순위: 분석 결과 > 현재 위치(GPS) > 서울 시청 기본값
   const mapCenter = options?.center ?? userLocation ?? SEOUL_CENTER
-  // options 있음 → level 4 (분석 반경), userLocation → level 6 (동네), 기본 → level 7 (서울 전체)
-  const mapLevel = options ? 4 : userLocation ? 6 : 7
+  const initialLevel = options ? 4 : userLocation ? 6 : 7
+
+  // 현재 지도 레벨 — 클러스터/개별 모드 전환 판단
+  const [currentLevel, setCurrentLevel] = useState(initialLevel)
+
+  // options 변경(새 분석) 시 레벨 리셋
+  useEffect(() => {
+    setCurrentLevel(initialLevel)
+  }, [initialLevel])
+
+  const needsCluster = (options?.competitors.length ?? 0) >= CLUSTER_THRESHOLD
+
+  // 클러스터 모드: 마커 50개 이상 AND 레벨이 CLUSTER_MIN_LEVEL 초과
+  // 개별 모드: !clusterMode — 두 모드가 절대 동시에 활성화되지 않음
+  const clusterMode = needsCluster && currentLevel > CLUSTER_MIN_LEVEL
+  const individualMode = !clusterMode
+
+  const handleZoomChanged = useCallback((target: kakao.maps.Map) => {
+    setCurrentLevel(target.getLevel())
+  }, [])
 
   // <Map>을 조건부로 마운트/언마운트하면 sdkLoading 전환 시점에 Kakao SDK 내부
   // 객체에 .state 접근 충돌이 발생한다. 항상 마운트 유지하고 overlay로 로딩 표시.
   return (
     <div className="relative min-h-0 flex-1">
-      <Map center={mapCenter} className="h-full w-full" level={mapLevel}>
+      <Map
+        center={mapCenter}
+        className="h-full w-full"
+        level={initialLevel}
+        onZoomChanged={handleZoomChanged}
+      >
         {/* SDK 준비 후에만 하위 Kakao 컴포넌트 렌더 */}
         {options && !sdkLoading && (
           <>
@@ -40,46 +83,35 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
               fillOpacity={0.05}
             />
 
-            <CustomOverlayMap
+            {/* 후보지 핀 — 항상 표시 */}
+            <CandidatePin
               position={{ lat: options.center.lat, lng: options.center.lng }}
-              yAnchor={0.5}
-              xAnchor={0.5}
-              zIndex={10}
-            >
-              <div
-                style={{
-                  width: 14,
-                  height: 14,
-                  background: MARKER_COLOR.center,
-                  border: '2.5px solid #fff',
-                  borderRadius: '50%',
-                  boxShadow: '0 1px 4px rgba(0,0,0,0.3)',
-                }}
-              />
-            </CustomOverlayMap>
+            />
 
-            {options.competitors.map((c) => (
-              <CustomOverlayMap
-                key={c.bizesId}
-                position={{ lat: c.lat, lng: c.lng }}
-                yAnchor={0.5}
-                xAnchor={0.5}
-                zIndex={5}
-              >
-                <div
-                  title={c.bizesNm}
-                  style={{
-                    width: 10,
-                    height: 10,
-                    background: c.type === 'same' ? MARKER_COLOR.same : MARKER_COLOR.similar,
-                    border: '1.5px solid #fff',
-                    borderRadius: '50%',
-                    boxShadow: '0 1px 3px rgba(0,0,0,0.25)',
-                    cursor: 'pointer',
-                  }}
-                />
-              </CustomOverlayMap>
-            ))}
+            {/*
+              클러스터 레이어 — needsCluster일 때 항상 마운트 유지
+              clusterMode prop으로 활성/비활성 제어:
+                true  → SDK 아이콘 마커 + 클러스터 집계 표시
+                false → 내부에서 즉시 cleanup (마커·클러스터러 제거)
+            */}
+            {needsCluster && (
+              <ClustererLayer
+                competitors={options.competitors}
+                clusterMode={clusterMode}
+              />
+            )}
+
+            {/*
+              개별 마커 — individualMode일 때만 렌더링
+              clusterMode와 항상 반대값이므로 동시 렌더링 불가
+                50개 미만: needsCluster=false → clusterMode=false → 항상 표시
+                50개 이상, 줌인(레벨 ≤4): clusterMode=false → 표시
+                50개 이상, 줌아웃(레벨 >4): clusterMode=true → 렌더링 안 함
+            */}
+            {individualMode &&
+              options.competitors.map((c) => (
+                <CompetitorMarker key={c.bizesId} competitor={c} />
+              ))}
           </>
         )}
       </Map>
