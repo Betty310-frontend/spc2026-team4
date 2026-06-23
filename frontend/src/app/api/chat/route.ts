@@ -26,7 +26,14 @@ export async function POST(req: Request) {
     system: `너는 서울 소상공인 예비창업자를 위한 상권 리스크 해석 도구다.
 제공된 공공 데이터 수치 외 추정·예측·확률·매출 언급은 절대 금지.
 모르면 모른다고 답해라.
-금지 표현: 성공, 매출, 확률, 점수, 보장`,
+금지 표현: 성공, 매출, 확률, 점수, 보장
+
+[출력 형식]
+- 헤더(##, ###) 사용 금지
+- 구분선(---) 사용 금지
+- 강조는 **볼드**만 사용
+- 목록이 필요한 경우 - 불릿 사용
+- 간결하게 2~4문장 또는 불릿 3개 이내로 답변`,
     messages: await convertToModelMessages(messages),
     tools: {
       search_competitors: tool({
