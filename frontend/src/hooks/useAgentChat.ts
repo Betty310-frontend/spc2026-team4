@@ -15,6 +15,8 @@ export function useAgentChat() {
   const { updateMetric, setReportData, reset } = useAnalysisResult()
   const [input, setInput] = useState('')
 
+  const [apiError, setApiError] = useState<string | null>(null)
+
   const { messages, sendMessage, status, stop } = useChat({
     // api 기본값: '/api/chat' (DefaultChatTransport 기본 경로)
     // TODO: [FastAPI 교체] FastAPI 직접 연결 시 transport 옵션으로 변경
@@ -54,6 +56,7 @@ export function useAgentChat() {
 
     onError(error: Error) {
       console.error('[agent:error]', error)
+      setApiError(error.message || '알 수 없는 오류가 발생했습니다.')
     },
   })
 
@@ -62,6 +65,7 @@ export function useAgentChat() {
 
   const append = (text: string) => {
     // TODO: 조건 변경(반경·업종 수정) 시 setAnalysisContext로 부분 업데이트
+    setApiError(null)
     sendMessage({ text })
     setInput('')
   }
@@ -73,6 +77,7 @@ export function useAgentChat() {
     append,
     isLoading,
     agentStatus: isLoading ? ('analyzing' as const) : ('idle' as const),
+    apiError,
     stop,
     startNewAnalysis: reset,
   }
