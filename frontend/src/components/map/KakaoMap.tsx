@@ -1,7 +1,7 @@
 'use client'
 
 import { Map, Circle, useMap } from 'react-kakao-maps-sdk'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback } from 'react'
 import { Loader2 } from 'lucide-react'
 import useKakaoLoader from '@/hooks/use-kakao-loader'
 import { useCompetitorClusterer } from '@/hooks/use-competitor-clusterer'
@@ -41,12 +41,8 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
   const initialLevel = options ? 4 : userLocation ? 6 : 7
 
   // 현재 지도 레벨 — 클러스터/개별 모드 전환 판단
+  // onZoomChanged가 Map의 level prop 변경 시에도 발생하므로 별도 리셋 불필요
   const [currentLevel, setCurrentLevel] = useState(initialLevel)
-
-  // options 변경(새 분석) 시 레벨 리셋
-  useEffect(() => {
-    setCurrentLevel(initialLevel)
-  }, [initialLevel])
 
   const needsCluster = (options?.competitors.length ?? 0) >= CLUSTER_THRESHOLD
 
