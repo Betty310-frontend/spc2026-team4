@@ -13,7 +13,7 @@ import { AgentMessage } from '@/types/message'
 import { INITIAL_MESSAGE } from '@/constants/messages'
 
 export function AgentPanel() {
-  const { chatMessages, input, setInput, append, isLoading, agentStatus, startNewAnalysis } =
+  const { chatMessages, input, setInput, append, isLoading, agentStatus, apiError, startNewAnalysis } =
     useAgentChat()
   const { status: geoStatus, requestLocation } = useGeolocation()
   const { setAnalysisContext } = useAnalysisContext()
@@ -91,6 +91,11 @@ export function AgentPanel() {
           </div>
         )}
       </div>
+      {apiError && (
+        <div className="mx-3 mb-1 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-[11px] text-destructive">
+          오류: {apiError}
+        </div>
+      )}
       <ChatInput
         value={input}
         onChange={setInput}
