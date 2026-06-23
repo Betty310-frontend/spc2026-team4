@@ -1,7 +1,11 @@
 import csv
+import os
+import shutil
 import time
+import zipfile
 from pathlib import Path
 import asyncpg  # type: ignore[import-untyped]
+from supabase import create_client
 from app.core.database import get_engine
 
 _SALES_INSERT_SQL = """
@@ -375,14 +379,6 @@ async def seed_stores_from_csv(csv_path: Path) -> None:
         await conn.close()
 
 # 생활 인구 데이터 월별 합계 적재
-import csv
-import os
-import shutil
-import time
-import zipfile
-from pathlib import Path
-
-from supabase import create_client
 
 POPULATION_FLOW_BATCH_SIZE = 1_000
 
