@@ -22,6 +22,7 @@ export interface AgentMessage extends BaseMessage {
   role: 'agent'
   content: string
   confirmButtons?: ConfirmButton[]
+  confirmedAction?: string
 }
 
 export interface ToolCallMessage extends BaseMessage {

@@ -5,3 +5,9 @@ export interface MapOptions {
   radius_m: number
   competitors: Competitor[]
 }
+
+export interface KakaoMapProps {
+  options: MapOptions | null
+  userLocation?: { lat: number; lng: number } | null
+  isLoading?: boolean
+}

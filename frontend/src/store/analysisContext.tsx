@@ -7,6 +7,7 @@ const defaultContext: AnalysisContext = {
   industry: null,
   location: null,
   radius: null,
+  userLocation: null,
 }
 
 interface AnalysisContextValue {

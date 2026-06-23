@@ -25,6 +25,7 @@ export function ChatInput({ value, onChange, onSend, disabled, placeholder }: Ch
   return (
     <div className="flex flex-shrink-0 items-center gap-2 border-t px-3 pt-3 pb-3">
       <Input
+        data-chat-input
         value={value}
         onChange={(e) => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
