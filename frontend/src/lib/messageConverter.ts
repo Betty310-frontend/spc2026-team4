@@ -4,7 +4,9 @@ import { ChatMessage, ToolCallMessage } from '@/types/message'
 export function convertToChatMessages(sdkMessages: UIMessage[]): ChatMessage[] {
   const result: ChatMessage[] = []
 
-  for (const msg of sdkMessages) {
+  for (let msgIdx = 0; msgIdx < sdkMessages.length; msgIdx++) {
+    const msg = sdkMessages[msgIdx]
+
     if (msg.role === 'user') {
       const textPart = msg.parts.find((p) => p.type === 'text')
       const text = textPart && 'text' in textPart ? (textPart as { text: string }).text : ''
@@ -14,6 +16,7 @@ export function convertToChatMessages(sdkMessages: UIMessage[]): ChatMessage[] {
 
     if (msg.role === 'assistant') {
       let textAccum = ''
+      let textPartCount = 0
 
       for (const part of msg.parts) {
         if (part.type === 'text' && 'text' in part) {
@@ -23,14 +26,13 @@ export function convertToChatMessages(sdkMessages: UIMessage[]): ChatMessage[] {
         if (part.type === 'dynamic-tool') {
           if (textAccum.trim()) {
             result.push({
-              id: `${msg.id}-text-${result.length}`,
+              id: `${msg.id}-${msgIdx}-text-${textPartCount++}`,
               role: 'agent',
               content: textAccum.trim(),
             })
             textAccum = ''
           }
 
-          // DynamicToolUIPart states: input-streaming | input-available | output-available | output-error | ...
           const p = part as {
             type: 'dynamic-tool'
             toolName: string
@@ -42,13 +44,11 @@ export function convertToChatMessages(sdkMessages: UIMessage[]): ChatMessage[] {
           }
 
           const toolMsg: ToolCallMessage = {
-            id: p.toolCallId,
+            id: `${p.toolCallId}-${msgIdx}`,
             role: 'tool',
             toolName: p.toolName,
             params:
-              p.state !== 'input-streaming' && p.input
-                ? (p.input as Record<string, unknown>)
-                : {},
+              p.state !== 'input-streaming' && p.input ? (p.input as Record<string, unknown>) : {},
             status:
               p.state === 'output-available'
                 ? 'done'
@@ -56,9 +56,7 @@ export function convertToChatMessages(sdkMessages: UIMessage[]): ChatMessage[] {
                   ? 'error'
                   : 'loading',
             resultText:
-              p.state === 'output-available'
-                ? formatToolResult(p.toolName, p.output)
-                : undefined,
+              p.state === 'output-available' ? formatToolResult(p.toolName, p.output) : undefined,
             errorText: p.state === 'output-error' ? p.errorText : undefined,
           }
           result.push(toolMsg)
@@ -67,7 +65,7 @@ export function convertToChatMessages(sdkMessages: UIMessage[]): ChatMessage[] {
 
       if (textAccum.trim()) {
         result.push({
-          id: `${msg.id}-tail`,
+          id: `${msg.id}-${msgIdx}-tail`,
           role: 'agent',
           content: textAccum.trim(),
         })

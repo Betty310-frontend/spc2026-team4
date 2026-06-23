@@ -9,9 +9,15 @@ interface MessageThreadProps {
   messages: ChatMessage[]
   onConfirmAction?: (action: string) => void
   isStreaming?: boolean
+  disableConfirm?: boolean
 }
 
-export function MessageThread({ messages, onConfirmAction, isStreaming }: MessageThreadProps) {
+export function MessageThread({
+  messages,
+  onConfirmAction,
+  isStreaming,
+  disableConfirm,
+}: MessageThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
@@ -32,6 +38,7 @@ export function MessageThread({ messages, onConfirmAction, isStreaming }: Messag
             key={msg.id}
             message={msg}
             isStreaming={isStreaming && isLastMsg && msg.role === 'agent'}
+            buttonsDisabled={disableConfirm}
             onConfirmAction={onConfirmAction}
           />
         )
