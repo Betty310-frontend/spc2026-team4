@@ -1,4 +1,9 @@
 import { MetricCard, ReportData } from '@/store/analysisResult'
+import {
+  CompetitorsResponse,
+  PopulationResponse,
+  CompetitionPercentileResponse,
+} from '@/types/api'
 
 type MetricKey = 'competitors' | 'density' | 'population'
 
@@ -9,39 +14,46 @@ export function handleToolResult(
   setReportData: (report: ReportData) => void,
 ) {
   if (!result) return
-  const r = result as Record<string, unknown>
 
   switch (toolName) {
-    case 'search_competitors':
+    case 'search_competitors': {
+      const r = result as CompetitorsResponse
       updateMetric('competitors', {
         status: 'done',
-        value: `${r.count}곳`,
-        badge: `서울 상위 ${100 - (r.percentile as number)}%`,
-        badgeTier: r.tier as 'high' | 'mid' | 'low',
-        source: `${r.source} · ${r.date}`,
-        isFallback: r.fallback as boolean | undefined,
+        value: `${r.same_type}곳`,
+        badge: `서울 상위 ${100 - r.percentile}%`,
+        badgeTier: r.tier,
+        source: `${r.data_source} · ${r.base_date}`,
+        isFallback: r.fallback,
       })
       break
+    }
 
-    case 'get_population_flow':
+    case 'get_population_flow': {
+      const r = result as PopulationResponse
       updateMetric('population', {
         status: 'done',
         value: `${r.percentile}P`,
-        badge: `서울 상위 ${100 - (r.percentile as number)}%`,
-        badgeTier: r.tier as 'high' | 'mid' | 'low',
-        source: `${r.source} · ${r.timeRange}`,
+        badge: `서울 상위 ${100 - r.percentile}%`,
+        badgeTier: r.percentile >= 70 ? 'high' : r.percentile >= 40 ? 'mid' : 'low',
+        source: `${r.data_source} · ${r.time_range}`,
+        isFallback: r.fallback,
       })
       break
+    }
 
-    case 'calc_competition_percentile':
+    case 'calc_competition_percentile': {
+      const r = result as CompetitionPercentileResponse
       updateMetric('density', {
         status: 'done',
         value: `${r.percentile}P`,
-        badge: percentileToBadge(r.percentile as number),
-        badgeTier: r.tier as 'high' | 'mid' | 'low',
-        source: `H3 퍼센타일 · ${r.date}`,
+        badge: r.label,
+        badgeTier: r.tier,
+        source: `${r.data_source} · ${r.base_date}`,
+        isFallback: r.fallback,
       })
       break
+    }
 
     case 'get_rent_info':
     case 'get_positioning_data':
@@ -53,11 +65,4 @@ export function handleToolResult(
       void setReportData
       break
   }
-}
-
-function percentileToBadge(p: number): string {
-  if (p >= 80) return '매우 높음'
-  if (p >= 60) return '높음'
-  if (p >= 40) return '보통'
-  return '낮음'
 }
