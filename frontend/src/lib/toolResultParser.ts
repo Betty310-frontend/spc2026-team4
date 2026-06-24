@@ -21,8 +21,7 @@ export function handleToolResult(
       updateMetric('competitors', {
         status: 'done',
         value: `${r.same_type}곳`,
-        badge: `서울 상위 ${100 - r.percentile}%`,
-        badgeTier: r.tier,
+        badge: `총 ${r.total}곳`,
         source: `${r.data_source} · ${r.base_date}`,
         isFallback: r.fallback,
       })
@@ -31,12 +30,13 @@ export function handleToolResult(
 
     case 'get_population_flow': {
       const r = result as PopulationResponse
+      const p = r.percentile ?? 0
       updateMetric('population', {
         status: 'done',
-        value: `${r.percentile}P`,
-        badge: `서울 상위 ${100 - r.percentile}%`,
-        badgeTier: r.percentile >= 70 ? 'high' : r.percentile >= 40 ? 'mid' : 'low',
-        source: `${r.data_source} · ${r.time_range}`,
+        value: `${p}P`,
+        badge: `서울 상위 ${100 - p}%`,
+        badgeTier: p >= 70 ? 'high' : p >= 40 ? 'mid' : 'low',
+        source: `${r.data_source} · ${r.base_date}`,
         isFallback: r.fallback,
       })
       break
@@ -48,7 +48,7 @@ export function handleToolResult(
         status: 'done',
         value: `${r.percentile}P`,
         badge: r.label,
-        badgeTier: r.tier,
+        badgeTier: r.tier as 'high' | 'mid' | 'low',
         source: `${r.data_source} · ${r.base_date}`,
         isFallback: r.fallback,
       })
@@ -57,11 +57,9 @@ export function handleToolResult(
 
     case 'get_rent_info':
     case 'get_positioning_data':
-      // TODO: 해당 데이터를 리포트 또는 별도 카드로 연결
       break
 
     default:
-      // setReportData 연동은 에이전트 최종 응답 파싱 후 별도 처리
       void setReportData
       break
   }

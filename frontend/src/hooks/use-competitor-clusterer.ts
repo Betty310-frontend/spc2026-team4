@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { Competitor } from '@/types/api'
+import { CompetitorItem } from '@/types/api'
 import { getIndustryIcon } from '@/constants/industry-icons'
 import { CLUSTER_MIN_LEVEL, CLUSTER_THRESHOLD } from '@/constants/map'
 
@@ -49,9 +49,9 @@ const CLUSTER_STYLES = [
 
 // 업종 아이콘 이모지가 포함된 SVG 마커 이미지
 // 클러스터 미형성 단독 마커에도 아이콘이 표시됨
-function createMarkerSVG(c: Competitor): string {
+function createMarkerSVG(c: CompetitorItem): string {
   const fill = c.type === 'same' ? '#E24B4A' : '#EF9F27'
-  const icon = getIndustryIcon(c.indsMclsNm, c.indsSclsNm)
+  const icon = getIndustryIcon(c.category ?? undefined)
   const svg =
     `<svg xmlns="http://www.w3.org/2000/svg" width="28" height="28">` +
     `<circle cx="14" cy="14" r="12" fill="${fill}" stroke="#fff" stroke-width="2"/>` +
@@ -65,7 +65,7 @@ function createMarkerSVG(c: Competitor): string {
 
 export function useCompetitorClusterer(
   map: kakao.maps.Map | null,
-  competitors: Competitor[],
+  competitors: CompetitorItem[],
   enabled: boolean,
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -110,7 +110,7 @@ export function useCompetitorClusterer(
       return new window.kakao.maps.Marker({
         position: new window.kakao.maps.LatLng(c.lat, c.lng),
         image,
-        title: c.bizesNm,
+        title: c.name ?? undefined,
       })
     })
     markersRef.current = markers

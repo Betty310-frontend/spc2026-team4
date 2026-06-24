@@ -2,7 +2,7 @@
 
 import { useState } from 'react'
 import { CustomOverlayMap } from 'react-kakao-maps-sdk'
-import { Competitor } from '@/types/api'
+import { CompetitorItem } from '@/types/api'
 import { getIndustryIcon } from '@/constants/industry-icons'
 
 const COLOR = {
@@ -11,13 +11,13 @@ const COLOR = {
 } as const
 
 interface CompetitorMarkerProps {
-  competitor: Competitor
+  competitor: CompetitorItem
 }
 
 export function CompetitorMarker({ competitor: c }: CompetitorMarkerProps) {
   const [hovered, setHovered] = useState(false)
   const color = COLOR[c.type]
-  const icon = getIndustryIcon(c.indsMclsNm, c.indsSclsNm)
+  const icon = getIndustryIcon(c.category ?? undefined)
 
   return (
     <CustomOverlayMap
@@ -62,13 +62,15 @@ export function CompetitorMarker({ competitor: c }: CompetitorMarkerProps) {
                   textOverflow: 'ellipsis',
                 }}
               >
-                {c.bizesNm}
+                {c.name}
               </span>
             </div>
+
             <div style={{ fontSize: 10, color: '#6b7280' }}>
-              {c.indsSclsNm ?? c.indsMclsNm ?? '업종 정보 없음'}
+              {c.category ?? '업종 정보 없음'}
             </div>
-            {c.rdnmAdr && (
+
+            {c.address && (
               <div
                 style={{
                   fontSize: 10,
@@ -79,9 +81,10 @@ export function CompetitorMarker({ competitor: c }: CompetitorMarkerProps) {
                   textOverflow: 'ellipsis',
                 }}
               >
-                {c.rdnmAdr}
+                {c.address}
               </div>
             )}
+
             <div
               style={{
                 marginTop: 4,
@@ -96,6 +99,7 @@ export function CompetitorMarker({ competitor: c }: CompetitorMarkerProps) {
             >
               {c.type === 'same' ? '동일 업종' : '유사 업종'}
             </div>
+
             {/* 툴팁 꼬리 */}
             <div
               style={{

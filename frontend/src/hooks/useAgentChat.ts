@@ -1,26 +1,41 @@
 'use client'
 
 import { useChat } from '@ai-sdk/react'
+import { DefaultChatTransport } from 'ai'
 import { UIMessage } from 'ai'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useAnalysisContext } from '@/store/analysisContext'
+
 import { useAnalysisResult } from '@/store/analysisResult'
 import { convertToChatMessages } from '@/lib/messageConverter'
 import { handleToolResult } from '@/lib/toolResultParser'
 import { parseContextFromToolArgs } from '@/lib/contextParser'
 import { hasForbiddenWord } from '@/lib/guardrail'
 
-export function useAgentChat() {
-  const { setAnalysisContext } = useAnalysisContext()
+interface UseAgentChatOptions {
+  onChatError?: (error: Error) => void
+}
+
+export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
+  const { analysisContext, setAnalysisContext } = useAnalysisContext()
   const { updateMetric, setReportData, reset } = useAnalysisResult()
   const [input, setInput] = useState('')
+  const analysisContextRef = useRef(analysisContext)
 
-  const [apiError, setApiError] = useState<string | null>(null)
+  // useChat options은 mount 시점에 클로저로 고정되므로 ref로 최신 콜백 유지
+  const onChatErrorRef = useRef(onChatError)
+  useEffect(() => {
+    onChatErrorRef.current = onChatError
+  }, [onChatError])
+
+  useEffect(() => {
+    analysisContextRef.current = analysisContext
+  }, [analysisContext])
+
+  const transport = useMemo(() => new DefaultChatTransport(), [])
 
   const { messages, sendMessage, status, stop } = useChat({
-    // api 기본값: '/api/chat' (DefaultChatTransport 기본 경로)
-    // TODO: [FastAPI 교체] FastAPI 직접 연결 시 transport 옵션으로 변경
-    // transport: new DefaultChatTransport({ api: process.env.NEXT_PUBLIC_API_BASE_URL + '/chat' })
+    transport,
 
     onFinish({ message }: { message: UIMessage }) {
       // 금지어 필터
@@ -56,7 +71,7 @@ export function useAgentChat() {
 
     onError(error: Error) {
       console.error('[agent:error]', error)
-      setApiError(error.message || '알 수 없는 오류가 발생했습니다.')
+      onChatErrorRef.current?.(error)
     },
   })
 
@@ -64,9 +79,16 @@ export function useAgentChat() {
   const isLoading = status === 'submitted' || status === 'streaming'
 
   const append = (text: string) => {
-    // TODO: 조건 변경(반경·업종 수정) 시 setAnalysisContext로 부분 업데이트
-    setApiError(null)
-    sendMessage({ text })
+    sendMessage(
+      { text },
+      {
+        body: {
+          station: analysisContextRef.current.location ?? '',
+          category: analysisContextRef.current.industry ?? '',
+          radius: analysisContextRef.current.radius ?? 500,
+        },
+      },
+    )
     setInput('')
   }
 
@@ -77,7 +99,6 @@ export function useAgentChat() {
     append,
     isLoading,
     agentStatus: isLoading ? ('analyzing' as const) : ('idle' as const),
-    apiError,
     stop,
     startNewAnalysis: reset,
   }
