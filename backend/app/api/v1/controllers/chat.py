@@ -23,6 +23,8 @@ async def handle_chat(
             current_station=body.station,
             current_radius=body.radius,
             current_category=body.category,
+            current_lat=body.lat,
+            current_lng=body.lng,
             db=db,
             redis=redis,
         ),

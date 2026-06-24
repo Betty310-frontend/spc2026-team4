@@ -17,6 +17,7 @@ def get_llm() -> ChatOpenAI:
             api_key=SecretStr(get_settings().openai_api_key),
             model=get_settings().openai_model_name,
             temperature=0,
+            timeout=60,
         )
 
     # 있으면 기존 인스턴스를 반환

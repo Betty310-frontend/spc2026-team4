@@ -21,13 +21,13 @@ async def init_redis_pool() -> None:
     global _redis_pool
     settings = get_settings()
 
-    pool = await _try_pool(settings.redis_local_url)
-    if pool:
-        print(f'[Redis] 로컬 연결 성공: {settings.redis_local_url}')
-        _redis_pool = pool
-        return
-
-    print(f'[Redis] 로컬 연결 실패: {settings.redis_local_url}')
+    if settings.redis_local_url:
+        pool = await _try_pool(settings.redis_local_url)
+        if pool:
+            print(f'[Redis] 로컬 연결 성공: {settings.redis_local_url}')
+            _redis_pool = pool
+            return
+        print(f'[Redis] 로컬 연결 실패: {settings.redis_local_url}')
 
     if settings.redis_cloud_url:
         pool = await _try_pool(settings.redis_cloud_url)
