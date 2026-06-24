@@ -1,9 +1,11 @@
 'use client'
 
 import { useChat } from '@ai-sdk/react'
+import { DefaultChatTransport } from 'ai'
 import { UIMessage } from 'ai'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useAnalysisContext } from '@/store/analysisContext'
+
 import { useAnalysisResult } from '@/store/analysisResult'
 import { convertToChatMessages } from '@/lib/messageConverter'
 import { handleToolResult } from '@/lib/toolResultParser'
@@ -15,9 +17,10 @@ interface UseAgentChatOptions {
 }
 
 export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
-  const { setAnalysisContext } = useAnalysisContext()
+  const { analysisContext, setAnalysisContext } = useAnalysisContext()
   const { updateMetric, setReportData, reset } = useAnalysisResult()
   const [input, setInput] = useState('')
+  const analysisContextRef = useRef(analysisContext)
 
   // useChat options은 mount 시점에 클로저로 고정되므로 ref로 최신 콜백 유지
   const onChatErrorRef = useRef(onChatError)
@@ -25,10 +28,14 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
     onChatErrorRef.current = onChatError
   }, [onChatError])
 
+  useEffect(() => {
+    analysisContextRef.current = analysisContext
+  }, [analysisContext])
+
+  const transport = useMemo(() => new DefaultChatTransport(), [])
+
   const { messages, sendMessage, status, stop } = useChat({
-    // api 기본값: '/api/chat' (DefaultChatTransport 기본 경로)
-    // TODO: [FastAPI 교체] FastAPI 직접 연결 시 transport 옵션으로 변경
-    // transport: new DefaultChatTransport({ api: process.env.NEXT_PUBLIC_API_BASE_URL + '/chat' })
+    transport,
 
     onFinish({ message }: { message: UIMessage }) {
       // 금지어 필터
@@ -72,7 +79,16 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
   const isLoading = status === 'submitted' || status === 'streaming'
 
   const append = (text: string) => {
-    sendMessage({ text })
+    sendMessage(
+      { text },
+      {
+        body: {
+          station: analysisContextRef.current.location ?? '',
+          category: analysisContextRef.current.industry ?? '',
+          radius: analysisContextRef.current.radius ?? 500,
+        },
+      },
+    )
     setInput('')
   }
 

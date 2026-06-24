@@ -15,6 +15,27 @@ const AI_SDK_KNOWN_TYPES = new Set([
   'message-metadata',
 ])
 
+function normalizeAiSdkEventPayload(payload: unknown): unknown {
+  if (!payload || typeof payload !== 'object') return payload
+
+  const event = payload as Record<string, unknown>
+
+  if (event.type !== 'error') return payload
+
+  if (typeof event.errorText === 'string') return payload
+
+  const code = typeof event.code === 'string' ? event.code : 'AGENT_ERROR'
+  const message =
+    typeof event.message === 'string'
+      ? event.message
+      : 'Unknown upstream error'
+
+  return {
+    type: 'error',
+    errorText: `[${code}] ${message}`,
+  }
+}
+
 /**
  * FastAPI SSE 스트림에서 AI SDK가 모르는 이벤트 타입(예: "session")을 제거.
  * 미인식 타입이 그대로 클라이언트에 도달하면 AI_TypeValidationError 발생.
@@ -47,7 +68,9 @@ function filterAiSdkStream(body: ReadableStream<Uint8Array>): ReadableStream<Uin
 
           const jsonStr = dataLine.slice(6).trim()
           try {
-            const parsed = JSON.parse(jsonStr) as { type?: string }
+            const parsed = normalizeAiSdkEventPayload(JSON.parse(jsonStr)) as {
+              type?: string
+            }
             const t = parsed.type
 
             if (
@@ -55,7 +78,9 @@ function filterAiSdkStream(body: ReadableStream<Uint8Array>): ReadableStream<Uin
               AI_SDK_KNOWN_TYPES.has(t) || // 인식된 타입 — 통과
               t.startsWith('data-') // custom data-* 타입 — 통과
             ) {
-              controller.enqueue(encoder.encode(event + '\n\n'))
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`),
+              )
             }
             // "session", "thread" 등 미인식 타입 — 무시
           } catch {

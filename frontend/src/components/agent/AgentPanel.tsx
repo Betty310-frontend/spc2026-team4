@@ -12,6 +12,7 @@ import { ChatInput } from './ChatInput'
 import { Disclaimer } from './Disclaimer'
 import type { AgentMessage } from '@/types/message'
 import { INITIAL_MESSAGE } from '@/constants/messages'
+import { reverseGeocode } from '@/lib/geocode'
 
 export function AgentPanel() {
   const { status: geoStatus, requestLocation } = useGeolocation()
@@ -106,9 +107,36 @@ export function AgentPanel() {
         case 'use_current_location': {
           setInitMessage((prev) => ({ ...prev, confirmedAction: action }))
           const pos = await requestLocation()
+
           if (pos) {
-            setAnalysisContext({ userLocation: pos })
+            setAnalysisContext({
+              userLocation: pos,
+              location: null,
+              dongCode: null,
+              fullLocationName: null,
+            })
+
+            // SDK Geocoder로 역지오코딩 — 행정동명·코드 획득
+            const geoResult = await reverseGeocode(pos.lat, pos.lng)
+
+            if (geoResult) {
+              setAnalysisContext({
+                userLocation: pos,
+                location: geoResult.dongName,
+                dongCode: geoResult.dongCode,
+                fullLocationName: geoResult.fullName,
+              })
+              append(`현재 위치(${geoResult.fullName})에서 창업을 준비 중이에요.`)
+            } else {
+              // 역지오코딩 실패 → 좌표 텍스트 fallback
+              append(
+                `현재 위치(좌표: ${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)})에서 창업을 준비 중이에요.`,
+              )
+            }
+          } else {
+            append('위치 권한을 허용하지 않았어요.')
           }
+
           setShowQuickStart(true)
           document.querySelector<HTMLInputElement>('[data-chat-input]')?.focus()
           break

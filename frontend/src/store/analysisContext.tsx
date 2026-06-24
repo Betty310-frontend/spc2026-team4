@@ -8,6 +8,8 @@ const defaultContext: AnalysisContext = {
   location: null,
   radius: null,
   userLocation: null,
+  dongCode: null,
+  fullLocationName: null,
 }
 
 interface AnalysisContextValue {
