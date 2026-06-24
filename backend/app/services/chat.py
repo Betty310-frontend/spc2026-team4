@@ -3,9 +3,10 @@
 import json
 import uuid
 from collections.abc import AsyncGenerator
+from typing import Any, cast
 
 from langchain.agents import create_agent
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from redis.asyncio import Redis
@@ -54,8 +55,8 @@ def _sse(chunk: dict) -> str:
     return f'data: {json.dumps(chunk, ensure_ascii=False)}\n\n'
 
 
-def _to_lc_messages(messages: list[UIMessage]) -> list[HumanMessage | AIMessage]:
-    result: list[HumanMessage | AIMessage] = []
+def _to_lc_messages(messages: list[UIMessage]) -> list[BaseMessage]:
+    result: list[BaseMessage] = []
     for msg in messages:
         text = next((p.text for p in msg.parts if p.type == 'text'), msg.content)
         if not text:

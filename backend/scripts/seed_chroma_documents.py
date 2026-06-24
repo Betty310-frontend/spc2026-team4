@@ -164,7 +164,7 @@ def embed_text(client: OpenAI, text: str) -> list[float]:
 
 
 def collect_files(include_paths: list[str]) -> list[Path]:
-    files = []
+    files: list[Path] = []
 
     for relative_dir in include_paths:
         target_dir = RAG_DIR / relative_dir
