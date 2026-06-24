@@ -1,0 +1,49 @@
+services:
+  team-api:
+    container_name: fastapi-server
+    build: .
+    env_file: .env
+    environment:
+      # 컨테이너 내부에서 localhost → 서비스명으로 오버라이드
+      PG_LOCAL_URL: postgresql+asyncpg://spcteam4:1q2w3e4r@team-db:5432/teamdb
+      # Redis는 클라우드 URL 사용 (REDIS_CLOUD_URL은 .env에서 로드)
+      REDIS_LOCAL_URL: ""
+    ports:
+      - 8000:8000
+    depends_on:
+      team-db:
+        condition: service_healthy
+    restart: unless-stopped
+
+  team-nginx:
+    container_name: nginx-server
+    image: nginx:1.27-alpine
+    ports:
+      - 80:80
+    volumes:
+      - ./docker/nginx.conf:/etc/nginx/conf.d/default.conf:ro
+    depends_on:
+      - team-api
+    restart: unless-stopped
+
+  team-db:
+    container_name: postgres-server
+    image: postgis/postgis:16-3.4
+    environment:
+      POSTGRES_DB: teamdb
+      POSTGRES_USER: spcteam4
+      POSTGRES_PASSWORD: 1q2w3e4r
+    ports:
+      - 5432:5432
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./docker/init.sql:/docker-entrypoint-initdb.d/01_postgis.sql
+      - ./docker/02_create_tables.sql:/docker-entrypoint-initdb.d/02_create_tables.sql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U spcteam4 -d teamdb"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  postgres_data:

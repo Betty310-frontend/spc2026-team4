@@ -1,4 +1,4 @@
-"""PostGIS 기반 상가 조회 서비스."""
+"""PostGIS 기반 경쟁업체·행정동 조회 서비스."""
 
 from geoalchemy2 import WKTElement
 from geoalchemy2.types import Geography
@@ -6,8 +6,6 @@ from sqlalchemy import ColumnElement, cast, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.category_map import CategoryFilter
-from app.entities.local_people import LocalPeople
-from app.entities.sales import SeoulSales
 from app.entities.store import Store
 
 
@@ -35,6 +33,7 @@ async def search_competitors(
             Store.id,
             Store.name,
             Store.category_mid_name,
+            Store.address,
             func.ST_Y(Store.location).label('lat'),
             func.ST_X(Store.location).label('lng'),
         )
@@ -57,6 +56,8 @@ async def search_competitors(
             'lat': float(row.lat),
             'lng': float(row.lng),
             'type': 'same',
+            'category': row.category_mid_name,
+            'address': row.address,
         }
         for row in rows
     ]
@@ -106,50 +107,14 @@ async def get_dong_codes_in_radius(
     return [r.dong_code for r in rows], rows[0].dong_name
 
 
-async def get_monthly_avg_sales(
+async def get_dong_name_by_code(
     session: AsyncSession,
-    dong_codes: list[str],
-    sales_service_codes: tuple[str, ...],
-) -> dict:
-    """행정동 코드 목록 기준 월평균 추정매출을 반환한다."""
-    if not dong_codes or not sales_service_codes:
-        return {}
-
-    # monthly_sales_amt는 분기 합계 — 월평균으로 변환하기 위해 ÷3
-    stmt = select(
-        (func.avg(SeoulSales.monthly_sales_amt) / 3).label('monthly_avg_amt'),
-        (func.avg(SeoulSales.monthly_sales_cnt) / 3).label('monthly_avg_cnt'),
-    ).where(
-        SeoulSales.dong_code.in_(dong_codes),
-        SeoulSales.service_code.in_(sales_service_codes),
+    dong_code: str,
+) -> str | None:
+    """행정동 코드로 행정동명을 반환한다."""
+    stmt = (
+        select(Store.dong_name)
+        .where(Store.dong_code == dong_code, Store.dong_name.isnot(None))
+        .limit(1)
     )
-    row = (await session.execute(stmt)).one()
-    return {
-        'monthly_avg_sales_amt': int(row.monthly_avg_amt)
-        if row.monthly_avg_amt
-        else None,
-        'monthly_avg_sales_cnt': int(row.monthly_avg_cnt)
-        if row.monthly_avg_cnt
-        else None,
-    }
-
-
-async def get_population_flow(
-    session: AsyncSession,
-    dong_codes: list[str],
-    peak_hours: tuple[str, ...],
-) -> dict:
-    """행정동별 업종 핵심 시간대 평균 생활인구를 반환한다."""
-    if not dong_codes or not peak_hours:
-        return {}
-
-    stmt = select(
-        func.avg(LocalPeople.total).label('avg_pop'),
-    ).where(
-        LocalPeople.dong_code.in_(dong_codes),
-        LocalPeople.time_slot.in_(peak_hours),
-    )
-    row = (await session.execute(stmt)).one()
-    return {
-        'avg_peak_population': round(float(row.avg_pop), 1) if row.avg_pop else None,
-    }
+    return (await session.execute(stmt)).scalar_one_or_none()

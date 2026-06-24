@@ -30,9 +30,12 @@ venv/
 # docker volumes
 db_data/
 
+# macOS
+.DS_Store
+
 # local-only dev files
 CLAUDE.md
-docker-compose.yml
+docker-compose.override.yml
 docker/
 docs/
 data/

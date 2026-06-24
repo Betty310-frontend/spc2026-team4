@@ -8,6 +8,9 @@ import asyncpg  # type: ignore[import-untyped]
 from supabase import create_client
 from app.core.database import get_engine
 
+BATCH_SIZE = 5_000
+POPULATION_FLOW_BATCH_SIZE = 1_000
+
 _SALES_INSERT_SQL = """
 INSERT INTO seoul_sales (
     quarter_code, dong_code, dong_name,
@@ -112,8 +115,6 @@ def _sales_row_to_tuple(row: dict) -> tuple:
 
 
 async def seed_sales_from_csv(csv_paths: list[Path]) -> None:
-    from app.core.database import get_engine
-
     engine = get_engine()
     db_url = engine.url.render_as_string(hide_password=False).replace(
         'postgresql+asyncpg://', 'postgresql://'
@@ -231,8 +232,6 @@ def _lp_row_to_tuple(row: dict) -> tuple:
 
 
 async def seed_local_people_from_csv(csv_paths: list[Path]) -> None:
-    from app.core.database import get_engine
-
     engine = get_engine()
     db_url = engine.url.render_as_string(hide_password=False).replace(
         'postgresql+asyncpg://', 'postgresql://'
@@ -278,8 +277,6 @@ async def seed_local_people_from_csv(csv_paths: list[Path]) -> None:
     finally:
         await conn.close()
 
-
-BATCH_SIZE = 5_000
 
 INSERT_SQL = """
 INSERT INTO geo_store (
@@ -378,22 +375,15 @@ async def seed_stores_from_csv(csv_path: Path) -> None:
     finally:
         await conn.close()
 
-# 생활 인구 데이터 월별 합계 적재
 
-POPULATION_FLOW_BATCH_SIZE = 1_000
+# 생활 인구 데이터 월별 합계 적재
 
 
 def _clean_key(key) -> str:
     if key is None:
         return ''
 
-    return (
-        str(key)
-        .replace('\ufeff', '')
-        .replace('?', '')
-        .replace('"', '')
-        .strip()
-    )
+    return str(key).replace('\ufeff', '').replace('?', '').replace('"', '').strip()
 
 
 def _clean_row(row: dict) -> dict:
@@ -555,13 +545,10 @@ async def seed_population_flow_from_zips(zip_paths: list[Path]) -> None:
                 records, skipped = _build_monthly_sum(csv_path)
                 total_skipped += skipped
 
-                print(
-                    f'[SEED] 집계 결과: {len(records):,}건 '
-                    f'/ 스킵: {skipped:,}건'
-                )
+                print(f'[SEED] 집계 결과: {len(records):,}건 / 스킵: {skipped:,}건')
 
                 for i in range(0, len(records), POPULATION_FLOW_BATCH_SIZE):
-                    batch = records[i:i + POPULATION_FLOW_BATCH_SIZE]
+                    batch = records[i : i + POPULATION_FLOW_BATCH_SIZE]
 
                     supabase.schema('public').table('population_flow').upsert(
                         batch,
