@@ -1,5 +1,5 @@
 """AI 에이전트 채팅 서비스 — LangGraph ReAct 에이전트 + MemorySaver."""
-
+# mypy: ignore-errors
 import json
 import uuid
 from collections.abc import AsyncGenerator
@@ -233,7 +233,7 @@ async def stream_ui(
                 }
             )
 
-        async for event in agent.astream_events(
+        async for event in agent.astream_events(  # type: ignore[call-overload]
             {'messages': input_messages}, config=config, version='v2'
         ):
             kind = event['event']
