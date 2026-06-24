@@ -62,19 +62,8 @@ jobs:
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY }}
           script: |
-            cd /developers/app/backend
-
-            # 안전한 디렉토리로 설정
             git config --global --add safe.directory /developers/app
-
-            # 최신 코드 pull
+            cd /developers/app
             git pull origin main
-
-            # 의존성 업데이트 (uv.lock 기준 동기화)
-            uv sync --frozen
-
-            # 앱 재시작 (systemd 기준)
-            sudo systemctl restart backend
-
-            # PM2 사용 시:
-            # pm2 restart backend
+            cd backend
+            docker compose up -d --build --remove-orphans
