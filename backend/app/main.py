@@ -16,6 +16,11 @@ from app.entities.local_people import LocalPeople
 from app.entities.sales import SeoulSales
 from app.entities.store import Store
 
+from pydantic import BaseModel
+
+from app.services.rag_service import generate_rag_answer, search_rag_chunks
+
+
 DATA_DIR = Path(__file__).parent.parent / 'data'
 
 
@@ -111,3 +116,32 @@ def start_prod():
     load_dotenv('.env', override=True)
     settings = get_settings()
     uvicorn.run('app.main:app', host='127.0.0.1', port=settings.app_port, reload=False)
+
+
+class ChatRequest(BaseModel):
+    message: str
+    display_name: str
+
+
+@app.post("/api/v1/chat")
+def chat(request: ChatRequest):
+    result = generate_rag_answer(
+        display_name=request.display_name,
+        question=request.message,
+    )
+
+    return {
+        "display_name": request.display_name,
+        "message": request.message,
+        "answer": result["answer"],
+        "sources": result["sources"],
+    }
+
+
+@app.get("/api/v1/rag/search")
+def rag_search(display_name: str, question: str):
+    return {
+        "display_name": display_name,
+        "question": question,
+        "results": search_rag_chunks(display_name, question),
+    }
