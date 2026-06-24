@@ -54,7 +54,7 @@ export function ToolCallCard({ message, onRetry }: ToolCallCardProps) {
         )}
         {status === 'error' && (
           <Button
-            variant="ghost"
+            variant="outline"
             size="sm"
             className="h-auto flex-shrink-0 px-2 py-0.5 text-xs"
             onClick={onRetry}

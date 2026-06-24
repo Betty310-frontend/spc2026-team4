@@ -1,14 +1,20 @@
-export interface Competitor {
-  bizesId: string
-  bizesNm: string
-  rdnmAdr: string
+// ── 공통 ──────────────────────────────────────
+
+export interface CenterCoords {
+  lat: number
+  lng: number
+}
+
+// ── /api/v1/competitors ───────────────────────
+
+export interface CompetitorItem {
+  id: string
+  name: string
   lat: number
   lng: number
   type: 'same' | 'similar'
-  // 업종 분류 — 아이콘·툴팁 표시용
-  indsLclsNm?: string // 대분류 (예: "음식")
-  indsMclsNm?: string // 중분류 (예: "카페")
-  indsSclsNm?: string // 소분류 (예: "커피전문점")
+  category: string | null // 업종명 (아이콘 매핑에 사용)
+  address: string | null
 }
 
 export interface CompetitorsResponse {
@@ -17,33 +23,74 @@ export interface CompetitorsResponse {
   similar_type: number
   data_source: string
   base_date: string
-  center: { lat: number; lng: number }
+  center: CenterCoords
   radius_m: number
   fallback: boolean
-  tier: 'high' | 'mid' | 'low'
-  percentile: number
-  data: Competitor[]
+  fallback_reason: string | null
+  data: CompetitorItem[]
+}
+
+// ── /api/v1/population ────────────────────────
+
+export interface PopulationHourItem {
+  hour: string
+  count: number
 }
 
 export interface PopulationResponse {
   dong_code: string
-  dong_name: string
+  dong_name: string | null
   base_date: string
   data_source: string
-  weighted_avg: number
-  percentile: number
-  time_range: string
+  weighted_avg: number | null
+  percentile: number | null
+  time_weights_applied: string[]
   fallback: boolean
+  fallback_reason: string | null
+  data: PopulationHourItem[]
 }
+
+// ── /api/v1/competition-percentile ────────────
 
 export interface CompetitionPercentileResponse {
   percentile: number
-  tier: 'high' | 'mid' | 'low'
-  label: string
-  same_business_count: number
-  weighted_population: number
+  tier: string // "high" | "mid" | "low"
+  label: string // 예: "서울 상위 18%"
+  h3_resolution: number
+  competitor_density: number
+  population_normalized: boolean
+  data_source: string
+  base_date: string
+  fallback: boolean
+}
+
+// ── /api/v1/rent ──────────────────────────────
+
+export interface RentResponse {
+  dong_name: string
+  업종: string
+  기준_면적_sqm: number
+  월_임대료_min: number | null
+  월_임대료_max: number | null
+  단위: string
   data_source: string
   base_date: string
   fallback: boolean
   fallback_reason: string | null
+  note: string
+}
+
+// ── /api/v1/h3-hexagons ───────────────────────
+
+export interface H3HexagonItem {
+  h3Index: string
+  count: number
+}
+
+// ── map 관련 ──────────────────────────────────
+
+export interface MapOptions {
+  center: CenterCoords
+  radius_m: number
+  competitors: CompetitorItem[]
 }

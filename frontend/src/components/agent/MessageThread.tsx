@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { ChatMessage } from '@/types/message'
+import { AgentMessage, ChatMessage } from '@/types/message'
 import { MessageBubble } from './MessageBubble'
 import { ToolCallCard } from './ToolCallCard'
 
@@ -38,6 +38,7 @@ export function MessageThread({
             key={msg.id}
             message={msg}
             isStreaming={isStreaming && isLastMsg && msg.role === 'agent'}
+            isError={msg.role === 'agent' && (msg as AgentMessage).isError === true}
             buttonsDisabled={disableConfirm}
             onConfirmAction={onConfirmAction}
           />

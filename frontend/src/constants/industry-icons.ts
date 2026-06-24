@@ -38,10 +38,7 @@ export const INDUSTRY_ICON: Record<string, string> = {
   default: '🏪',
 }
 
-export function getIndustryIcon(indsMclsNm?: string, indsSclsNm?: string): string {
-  return (
-    INDUSTRY_ICON[indsSclsNm ?? ''] ??
-    INDUSTRY_ICON[indsMclsNm ?? ''] ??
-    INDUSTRY_ICON.default
-  )
+export function getIndustryIcon(category?: string): string {
+  if (!category) return INDUSTRY_ICON.default
+  return INDUSTRY_ICON[category] ?? INDUSTRY_ICON.default
 }

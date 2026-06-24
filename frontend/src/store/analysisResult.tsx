@@ -1,6 +1,7 @@
 'use client'
 
 import { createContext, useContext, useReducer } from 'react'
+import type { MapOptions } from '@/types/api'
 
 export type MetricStatus = 'idle' | 'loading' | 'done' | 'error' | 'fallback'
 
@@ -31,6 +32,7 @@ export interface AnalysisResult {
   density: MetricCard
   population: MetricCard
   report: ReportData | null
+  mapOptions: MapOptions | null
 }
 
 type MetricKey = 'competitors' | 'density' | 'population'
@@ -38,6 +40,7 @@ type MetricKey = 'competitors' | 'density' | 'population'
 type Action =
   | { type: 'UPDATE_METRIC'; key: MetricKey; data: Partial<MetricCard> }
   | { type: 'SET_REPORT'; report: ReportData }
+  | { type: 'SET_MAP_OPTIONS'; mapOptions: MapOptions | null }
   | { type: 'RESET' }
 
 const defaultResult: AnalysisResult = {
@@ -45,6 +48,7 @@ const defaultResult: AnalysisResult = {
   density: { status: 'idle' },
   population: { status: 'idle' },
   report: null,
+  mapOptions: null,
 }
 
 function reducer(state: AnalysisResult, action: Action): AnalysisResult {
@@ -53,6 +57,8 @@ function reducer(state: AnalysisResult, action: Action): AnalysisResult {
       return { ...state, [action.key]: { ...state[action.key], ...action.data } }
     case 'SET_REPORT':
       return { ...state, report: action.report }
+    case 'SET_MAP_OPTIONS':
+      return { ...state, mapOptions: action.mapOptions }
     case 'RESET':
       return defaultResult
     default:
@@ -63,6 +69,7 @@ function reducer(state: AnalysisResult, action: Action): AnalysisResult {
 interface AnalysisResultContextValue extends AnalysisResult {
   updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
   setReportData: (report: ReportData) => void
+  setMapOptions: (mapOptions: MapOptions | null) => void
   reset: () => void
 }
 
@@ -75,6 +82,7 @@ export function AnalysisResultProvider({ children }: { children: React.ReactNode
     ...state,
     updateMetric: (key, data) => dispatch({ type: 'UPDATE_METRIC', key, data }),
     setReportData: (report) => dispatch({ type: 'SET_REPORT', report }),
+    setMapOptions: (mapOptions) => dispatch({ type: 'SET_MAP_OPTIONS', mapOptions }),
     reset: () => dispatch({ type: 'RESET' }),
   }
 

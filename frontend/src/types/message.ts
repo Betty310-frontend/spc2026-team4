@@ -23,6 +23,7 @@ export interface AgentMessage extends BaseMessage {
   content: string
   confirmButtons?: ConfirmButton[]
   confirmedAction?: string
+  isError?: boolean
 }
 
 export interface ToolCallMessage extends BaseMessage {

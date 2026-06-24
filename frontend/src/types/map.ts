@@ -1,10 +1,6 @@
-import { Competitor } from './api'
+import { MapOptions } from './api'
 
-export interface MapOptions {
-  center: { lat: number; lng: number }
-  radius_m: number
-  competitors: Competitor[]
-}
+export type { MapOptions }
 
 export interface KakaoMapProps {
   options: MapOptions | null

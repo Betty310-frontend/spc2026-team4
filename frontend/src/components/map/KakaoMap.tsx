@@ -8,7 +8,7 @@ import { useCompetitorClusterer } from '@/hooks/use-competitor-clusterer'
 import { CandidatePin } from './CandidatePin'
 import { CompetitorMarker } from './CompetitorMarker'
 import { KakaoMapProps } from '@/types/map'
-import { Competitor } from '@/types/api'
+import { CompetitorItem } from '@/types/api'
 import { CLUSTER_THRESHOLD, CLUSTER_MIN_LEVEL } from '@/constants/map'
 
 const SEOUL_CENTER = { lat: 37.5665, lng: 126.978 }
@@ -25,7 +25,7 @@ function ClustererLayer({
   competitors,
   clusterMode,
 }: {
-  competitors: Competitor[]
+  competitors: CompetitorItem[]
   clusterMode: boolean
 }) {
   const map = useMap('ClustererLayer')
@@ -106,7 +106,7 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
             */}
             {individualMode &&
               options.competitors.map((c) => (
-                <CompetitorMarker key={c.bizesId} competitor={c} />
+                <CompetitorMarker key={c.id} competitor={c} />
               ))}
           </>
         )}

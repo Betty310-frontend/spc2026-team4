@@ -2,7 +2,7 @@
 
 import { useChat } from '@ai-sdk/react'
 import { UIMessage } from 'ai'
-import { useState, useMemo } from 'react'
+import { useState, useMemo, useRef, useEffect } from 'react'
 import { useAnalysisContext } from '@/store/analysisContext'
 import { useAnalysisResult } from '@/store/analysisResult'
 import { convertToChatMessages } from '@/lib/messageConverter'
@@ -10,12 +10,20 @@ import { handleToolResult } from '@/lib/toolResultParser'
 import { parseContextFromToolArgs } from '@/lib/contextParser'
 import { hasForbiddenWord } from '@/lib/guardrail'
 
-export function useAgentChat() {
+interface UseAgentChatOptions {
+  onChatError?: (error: Error) => void
+}
+
+export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
   const { setAnalysisContext } = useAnalysisContext()
   const { updateMetric, setReportData, reset } = useAnalysisResult()
   const [input, setInput] = useState('')
 
-  const [apiError, setApiError] = useState<string | null>(null)
+  // useChat options은 mount 시점에 클로저로 고정되므로 ref로 최신 콜백 유지
+  const onChatErrorRef = useRef(onChatError)
+  useEffect(() => {
+    onChatErrorRef.current = onChatError
+  }, [onChatError])
 
   const { messages, sendMessage, status, stop } = useChat({
     // api 기본값: '/api/chat' (DefaultChatTransport 기본 경로)
@@ -56,7 +64,7 @@ export function useAgentChat() {
 
     onError(error: Error) {
       console.error('[agent:error]', error)
-      setApiError(error.message || '알 수 없는 오류가 발생했습니다.')
+      onChatErrorRef.current?.(error)
     },
   })
 
@@ -64,8 +72,6 @@ export function useAgentChat() {
   const isLoading = status === 'submitted' || status === 'streaming'
 
   const append = (text: string) => {
-    // TODO: 조건 변경(반경·업종 수정) 시 setAnalysisContext로 부분 업데이트
-    setApiError(null)
     sendMessage({ text })
     setInput('')
   }
@@ -77,7 +83,6 @@ export function useAgentChat() {
     append,
     isLoading,
     agentStatus: isLoading ? ('analyzing' as const) : ('idle' as const),
-    apiError,
     stop,
     startNewAnalysis: reset,
   }
