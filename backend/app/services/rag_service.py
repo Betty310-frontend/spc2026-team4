@@ -4,7 +4,7 @@ from pathlib import Path
 import chromadb
 from dotenv import load_dotenv
 from openai import OpenAI
-
+from typing import Any, cast
 
 BASE_DIR = Path(__file__).resolve().parents[2]
 CHROMA_DIR = BASE_DIR / "data" / "chroma"
@@ -32,16 +32,19 @@ def search_rag_chunks(
 ) -> list[dict]:
     query_embedding = embed_query(question)
 
-    result = collection.query(
-        query_embeddings=[query_embedding],
-        n_results=n_results,
-        where={"display_name": display_name},
-        include=["documents", "metadatas", "distances"],
+    result = cast(
+        dict[str, Any],
+        collection.query(
+            query_embeddings=[query_embedding],  # type: ignore[arg-type]
+            n_results=n_results,
+            where={"display_name": display_name},
+            include=["documents", "metadatas", "distances"],
+        ),
     )
 
-    documents = result.get("documents", [[]])[0]
-    metadatas = result.get("metadatas", [[]])[0]
-    distances = result.get("distances", [[]])[0]
+    documents = cast(list[list[str]], result.get("documents") or [[]])[0]
+    metadatas = cast(list[list[dict[str, Any]]], result.get("metadatas") or [[]])[0]
+    distances = cast(list[list[float]], result.get("distances") or [[]])[0]
 
     chunks = []
 
