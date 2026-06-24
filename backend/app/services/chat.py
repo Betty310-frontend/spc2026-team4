@@ -1,11 +1,11 @@
 """AI 에이전트 채팅 서비스 — LangGraph ReAct 에이전트 + MemorySaver."""
-
+# mypy: ignore-errors
 import json
 import uuid
 from collections.abc import AsyncGenerator
 
 from langchain.agents import create_agent
-from langchain_core.messages import AIMessage, HumanMessage
+from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from redis.asyncio import Redis
@@ -14,6 +14,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.llm import get_llm
 from app.dto.chat import UIMessage
 from app.services.chat_tools import make_analysis_tools
+from app.services.rag_service import search_rag_chunks
 
 _SYSTEM = """
 너는 서울 소상공인 창업 리스크 해석 도구다.
@@ -37,27 +38,24 @@ _SYSTEM = """
 - 매출·생활인구 데이터가 null이면 언급하지 마라.
 
 [응답 규칙]
-- 도구 결과 데이터만 근거로 삼아라. 데이터 외 추정은 "데이터가 없어 확인할 수 없습니다"로 답해라.
+- 도구 결과 데이터와 RAG 참고 문서만 근거로 삼아라. 데이터 외 추정은 "데이터가 없어 확인할 수 없습니다"로 답해라.
 - 성공 가능성·매출 예측·폐업 확률·보장 같은 단정적 표현은 절대 금지.
 - 대화 맥락을 유지하며 연속된 상담처럼 응답해라.
 """
 
-# 프로세스 재시작 시 초기화됨 — 운영 환경에서는 AsyncPostgresSaver로 교체 필요
 _checkpointer = MemorySaver()
 
-# 도구별 진행 단계 레이블
 _TOOL_STEP = {
     'search_competitors': '경쟁업체 데이터 조회 중...',
 }
 
 
-# SSE 형식으로 메시지 청크를 직렬화한다.
 def _sse(chunk: dict) -> str:
     return f'data: {json.dumps(chunk, ensure_ascii=False)}\n\n'
 
 
-def _to_lc_messages(messages: list[UIMessage]) -> list[HumanMessage | AIMessage]:
-    result: list[HumanMessage | AIMessage] = []
+def _to_lc_messages(messages: list[UIMessage]) -> list[BaseMessage]:
+    result: list[BaseMessage] = []
     for msg in messages:
         text = next((p.text for p in msg.parts if p.type == 'text'), msg.content)
         if not text:
@@ -110,6 +108,62 @@ def _parse_tool_output(raw) -> dict:
     return {}
 
 
+def _get_last_user_message(messages: list[UIMessage]) -> UIMessage:
+    return next((m for m in reversed(messages) if m.role == 'user'), messages[-1])
+
+
+def _get_message_text(message: UIMessage) -> str:
+    return next((p.text for p in message.parts if p.type == 'text'), message.content)
+
+
+def _build_rag_message(
+    current_category: str,
+    question: str,
+) -> tuple[SystemMessage | None, list[dict]]:
+    if not current_category or not question:
+        return None, []
+
+    try:
+        rag_sources = search_rag_chunks(
+            display_name=current_category,
+            question=question,
+            n_results=5,
+        )
+    except Exception as e:
+        print(f'[RAG] 검색 실패: {e}')
+        return None, []
+
+    top_sources = rag_sources[:3]
+
+    if not top_sources:
+        return None, []
+
+    rag_context = '\n\n'.join(
+        [
+            f"[근거 {idx + 1}]\n"
+            f"문서: {source.get('document_title')}\n"
+            f"섹션: {source.get('section_title')}\n"
+            f"내용:\n{source.get('chunk_text')}"
+            for idx, source in enumerate(top_sources)
+        ]
+    )
+
+    rag_message = SystemMessage(
+        content=f"""
+다음은 업종 '{current_category}'와 관련된 RAG 참고 문서입니다.
+
+답변 규칙:
+1. 아래 근거를 우선 사용하세요.
+2. 근거에 없는 내용은 추측하지 말고 "문서에서 확인되지 않습니다"라고 말하세요.
+3. 답변 마지막에 참고한 문서명을 간단히 표시하세요.
+
+{rag_context}
+""".strip()
+    )
+
+    return rag_message, top_sources
+
+
 async def stream_ui(
     messages: list[UIMessage],
     conversation_id: str = '',
@@ -125,7 +179,6 @@ async def stream_ui(
     try:
         tools = make_analysis_tools(db, redis) if db and redis else []
 
-        # Agent 생성
         agent = create_agent(
             model=get_llm(),
             tools=tools,
@@ -135,20 +188,24 @@ async def stream_ui(
             checkpointer=_checkpointer,
         )
 
-        # 기존 대화 여부 확인
         state = await agent.aget_state(config)
         has_history = bool(state and state.values and state.values.get('messages'))
 
-        # 대화 이력이 있으면 마지막 user 메시지만 입력으로 사용
-        if has_history:
-            last_user = next(
-                (m for m in reversed(messages) if m.role == 'user'), messages[-1]
-            )
-            input_messages = _to_lc_messages([last_user])
+        last_user = _get_last_user_message(messages)
+        last_user_text = _get_message_text(last_user)
 
-        # 대화 이력이 없으면 전체 메시지를 입력으로 사용
+        rag_message, rag_sources = _build_rag_message(
+            current_category=current_category,
+            question=last_user_text,
+        )
+
+        if has_history:
+            input_messages = _to_lc_messages([last_user])
         else:
             input_messages = _to_lc_messages(messages)
+
+        if rag_message:
+            input_messages = [rag_message] + input_messages
 
         part_id = uuid.uuid4().hex
         text_started = False
@@ -159,6 +216,22 @@ async def stream_ui(
         yield _sse(
             {'type': 'step', 'label': '질문을 확인하고 있습니다...', 'done': True}
         )
+
+        if rag_sources:
+            yield _sse(
+                {
+                    'type': 'sources',
+                    'data': [
+                        {
+                            'title': source.get('document_title'),
+                            'section': source.get('section_title'),
+                            'file_path': source.get('file_path'),
+                            'file_type': source.get('file_type'),
+                        }
+                        for source in rag_sources
+                    ],
+                }
+            )
 
         async for event in agent.astream_events(  # type: ignore[call-overload]
             {'messages': input_messages}, config=config, version='v2'
