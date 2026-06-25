@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback, useMemo, useEffect } from 'react'
+import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
 import { useAgentChat } from '@/hooks/useAgentChat'
 import { useGeolocation } from '@/hooks/use-geolocation'
 import { useAnalysis } from '@/hooks/use-analysis'
@@ -13,6 +13,7 @@ import { Disclaimer } from './Disclaimer'
 import type { AgentMessage } from '@/types/message'
 import { INITIAL_MESSAGE } from '@/constants/messages'
 import { reverseGeocode } from '@/lib/geocode'
+import { beginMapUpdate } from '@/store/analysisResult'
 
 export function AgentPanel() {
   const { status: geoStatus, requestLocation } = useGeolocation()
@@ -46,6 +47,7 @@ export function AgentPanel() {
   const { runAnalysis, isLoading: analysisLoading, retry } = useAnalysis({
     onAgentMessage: addAgentMessage,
   })
+  const prevRadiusRef = useRef<number | null>(analysisContext.radius)
 
   // 에이전트가 업종·위치 컨텍스트를 파싱하면 자동으로 데이터 조회 시작
   // radius는 의존성에서 제외 — runAnalysis 내부에서 radius 변경 시 재트리거 방지
@@ -58,7 +60,22 @@ export function AgentPanel() {
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisContext.industry, analysisContext.location])
+  }, [analysisContext.industry, analysisContext.location, analysisContext.radius])
+
+  useEffect(() => {
+    const prevRadius = prevRadiusRef.current
+    const nextRadius = analysisContext.radius
+
+    if (
+      prevRadius != null &&
+      nextRadius != null &&
+      prevRadius !== nextRadius
+    ) {
+      beginMapUpdate('radius-change')
+    }
+
+    prevRadiusRef.current = nextRadius
+  }, [analysisContext.radius])
 
   const [initMessage, setInitMessage] = useState<AgentMessage>(() => ({
     ...INITIAL_MESSAGE,
@@ -153,6 +170,15 @@ export function AgentPanel() {
             change_radius_300: '네, 300m로 변경해주세요.',
             keep_radius_500: '500m로 유지할게요.',
           }
+
+          if (action === 'change_radius_300') {
+            setAnalysisContext({ radius: 300 })
+          }
+
+          if (action === 'keep_radius_500') {
+            setAnalysisContext({ radius: 500 })
+          }
+
           append(actionTextMap[action] ?? action)
           break
         }

@@ -1,9 +1,10 @@
 import { MetricCard, ReportData } from '@/store/analysisResult'
 import {
-  CompetitorsResponse,
-  PopulationResponse,
-  CompetitionPercentileResponse,
-} from '@/types/api'
+  applyCompetitors,
+  normalizeCompetitors,
+  type CompetitorsApiResponse,
+} from '@/lib/agent-event-bridge'
+import { PopulationResponse, CompetitionPercentileResponse } from '@/types/api'
 
 type MetricKey = 'competitors' | 'density' | 'population'
 
@@ -17,14 +18,7 @@ export function handleToolResult(
 
   switch (toolName) {
     case 'search_competitors': {
-      const r = result as CompetitorsResponse
-      updateMetric('competitors', {
-        status: 'done',
-        value: `${r.same_type}곳`,
-        badge: `총 ${r.total}곳`,
-        source: `${r.data_source} · ${r.base_date}`,
-        isFallback: r.fallback,
-      })
+      applyCompetitors(normalizeCompetitors(result as CompetitorsApiResponse))
       break
     }
 
