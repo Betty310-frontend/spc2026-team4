@@ -21,8 +21,8 @@ async def search_competitors(
     point = WKTElement(f'POINT({lng} {lat})', srid=4326)
 
     cat_cond: ColumnElement[bool]
-    if category_filter and category_filter.mid_codes:
-        cat_cond = Store.category_mid_code.in_(category_filter.mid_codes)
+    if category_filter and category_filter.small_codes:
+        cat_cond = Store.category_small_code.in_(category_filter.small_codes)
     elif category_filter and category_filter.large_code:
         cat_cond = Store.category_large_code == category_filter.large_code
     else:
@@ -32,7 +32,7 @@ async def search_competitors(
         select(
             Store.id,
             Store.name,
-            Store.category_mid_name,
+            Store.display_name,          # 변경
             Store.address,
             func.ST_Y(Store.location).label('lat'),
             func.ST_X(Store.location).label('lng'),
@@ -49,6 +49,7 @@ async def search_competitors(
     )
 
     rows = (await session.execute(stmt)).all()
+
     return [
         {
             'id': row.id,
@@ -56,7 +57,7 @@ async def search_competitors(
             'lat': float(row.lat),
             'lng': float(row.lng),
             'type': 'same',
-            'category': row.category_mid_name,
+            'category': row.display_name,   # 변경
             'address': row.address,
         }
         for row in rows
@@ -69,8 +70,9 @@ async def count_seoul_category(
 ) -> int:
     """서울 전체에서 해당 업종 수를 반환한다 (퍼센타일 기준값용)."""
     cat_cond: ColumnElement[bool]
-    if category_filter and category_filter.mid_codes:
-        cat_cond = Store.category_mid_code.in_(category_filter.mid_codes)
+
+    if category_filter and category_filter.small_codes:
+        cat_cond = Store.category_small_code.in_(category_filter.small_codes)
     elif category_filter and category_filter.large_code:
         cat_cond = Store.category_large_code == category_filter.large_code
     else:

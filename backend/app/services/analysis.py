@@ -66,8 +66,6 @@ def _build_scope(station, dong_name, radius, category, cat_filter, sales, popula
         'category': category,
         'data_periods': {'competitors': '2026년 3월'},
     }
-    if cat_filter and cat_filter.peak_hours:
-        scope['peak_hours_label'] = _format_peak_hours(cat_filter.peak_hours)
     if sales.get('monthly_avg_sales_amt') is not None:
         scope['data_periods']['sales'] = '2023~2025년 분기'
     if population.get('avg_peak_population') is not None:
@@ -164,7 +162,7 @@ async def run_market_analysis(
             station, get_settings().kakao_rest_api_key, redis
         )
     geohash_str = encode_geohash(coords['lat'], coords['lng'], precision=7)
-    cache_key = f'market:{cache_category}:{geohash_str}:{radius}'
+    cache_key = f'market:v2:{cache_category}:{geohash_str}:{radius}'
 
     cached = await redis.get(cache_key)
     if cached:
@@ -181,7 +179,7 @@ async def run_market_analysis(
         db, dong_codes, cat_filter.sales_service_codes if cat_filter else ()
     )
     population = await get_population_flow(
-        db, dong_codes, cat_filter.peak_hours if cat_filter else ()
+        db, dong_codes, ()
     )
 
     competitor_count = len(competitors_raw)
