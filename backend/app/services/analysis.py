@@ -58,7 +58,7 @@ def _format_peak_hours(peak_hours: tuple[str, ...]) -> str:
     return ', '.join(ranges)
 
 
-def _build_scope(station, dong_name, radius, category, cat_filter, sales, population):
+def _build_scope(station, dong_name, radius, category, sales, population):
     scope: dict = {
         'station': station,
         'dong_name': dong_name,
@@ -66,8 +66,6 @@ def _build_scope(station, dong_name, radius, category, cat_filter, sales, popula
         'category': category,
         'data_periods': {'competitors': '2026년 3월'},
     }
-    if cat_filter and cat_filter.peak_hours:
-        scope['peak_hours_label'] = _format_peak_hours(cat_filter.peak_hours)
     if sales.get('monthly_avg_sales_amt') is not None:
         scope['data_periods']['sales'] = '2023~2025년 분기'
     if population.get('avg_peak_population') is not None:
@@ -164,7 +162,7 @@ async def run_market_analysis(
             station, get_settings().kakao_rest_api_key, redis
         )
     geohash_str = encode_geohash(coords['lat'], coords['lng'], precision=7)
-    cache_key = f'market:{cache_category}:{geohash_str}:{radius}'
+    cache_key = f'market:v2:{cache_category}:{geohash_str}:{radius}'
 
     cached = await redis.get(cache_key)
     if cached:
@@ -181,7 +179,7 @@ async def run_market_analysis(
         db, dong_codes, cat_filter.sales_service_codes if cat_filter else ()
     )
     population = await get_population_flow(
-        db, dong_codes, cat_filter.peak_hours if cat_filter else ()
+        db, dong_codes, ()
     )
 
     competitor_count = len(competitors_raw)
@@ -241,9 +239,7 @@ async def run_market_analysis(
             per_store_est_cnt=per_store_est_cnt,
         ),
         'dong_name': primary_dong_name,
-        'scope': _build_scope(
-            station, primary_dong_name, radius, category, cat_filter, sales, population
-        ),
+        'scope': _build_scope( station, primary_dong_name, radius, category, sales, population, ),
         'sources': _build_sources(sales, population),
         'tags': [
             {'label': category, 'icon': CATEGORY_ICONS.get(category, '🏪')},
@@ -295,14 +291,8 @@ async def run_get_population(
     dong_codes, primary_dong_name = await get_dong_codes_in_radius(
         db, coords['lat'], coords['lng'], radius
     )
-    population = await get_population_flow(
-        db, dong_codes, cat_filter.peak_hours if cat_filter else ()
-    )
-    peak_hours_label = (
-        _format_peak_hours(cat_filter.peak_hours)
-        if cat_filter and cat_filter.peak_hours
-        else None
-    )
+    population = await get_population_flow( db, dong_codes, (), )
+    peak_hours_label = None
 
     result = {
         'station': station,
@@ -332,11 +322,7 @@ async def run_get_population_by_dong(
 ) -> dict:
     """행정동 코드 기반 생활인구 조회 — REST /population 엔드포인트 전용."""
     cat_filter = get_category_filter(category)
-    peak_hours = (
-        tuple(time_slots)
-        if time_slots
-        else (cat_filter.peak_hours if cat_filter else ())
-    )
+    peak_hours = tuple(time_slots) if time_slots else ()
     display_name = cat_filter.display_name if cat_filter else category
     cache_key = f'pop_dong:{dong_code}:{display_name}:{",".join(peak_hours)}'
 

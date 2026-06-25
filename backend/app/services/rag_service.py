@@ -12,12 +12,17 @@ COLLECTION_NAME = "business_rag"
 
 load_dotenv(BASE_DIR / ".env.local", override=True)
 
-openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
+api_key = os.getenv("OPENAI_API_KEY")
+
+openai_client = OpenAI(api_key=api_key) if api_key else None
 
 collection = chromadb.PersistentClient(path=str(CHROMA_DIR)).get_or_create_collection(name=COLLECTION_NAME)
 
 
 def embed_query(question: str) -> list[float]:
+    if openai_client is None:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
+
     res = openai_client.embeddings.create(
         model="text-embedding-3-small",
         input=question,
@@ -66,6 +71,9 @@ def generate_rag_answer(
     question: str,
     n_results: int = 5,
 ) -> dict:
+    if openai_client is None:
+        raise RuntimeError("OPENAI_API_KEY is not configured.")
+
     chunks = search_rag_chunks(display_name, question, n_results)
 
     if not chunks:
