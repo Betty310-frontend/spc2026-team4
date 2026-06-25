@@ -58,7 +58,7 @@ export function AgentPanel() {
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisContext.industry, analysisContext.location])
+  }, [analysisContext.industry, analysisContext.location, analysisContext.radius])
 
   const [initMessage, setInitMessage] = useState<AgentMessage>(() => ({
     ...INITIAL_MESSAGE,

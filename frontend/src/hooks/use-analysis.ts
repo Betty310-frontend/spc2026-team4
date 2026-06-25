@@ -7,6 +7,7 @@ import {
   fetchPopulation,
   fetchCompetitionPercentile,
 } from '@/lib/api-client'
+import { applyCompetitors, normalizeCompetitors } from '@/lib/agent-event-bridge'
 import { getApiErrorMessage } from '@/constants/error-messages'
 import type { AgentMessage } from '@/types/message'
 
@@ -51,19 +52,7 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
         lng: params.lng,
       })
 
-      setMapOptions({
-        center: comp.center,
-        radius_m: comp.radius_m,
-        competitors: comp.data,
-      })
-
-      updateMetric('competitors', {
-        status: 'done',
-        value: `${comp.same_type}곳`,
-        badge: `총 ${comp.total}곳`,
-        source: `${comp.data_source} · ${comp.base_date}`,
-        isFallback: comp.fallback,
-      })
+      applyCompetitors(normalizeCompetitors(comp))
 
       // Step 2: density + population 병렬 조회
       const [density, pop] = await Promise.allSettled([
@@ -128,7 +117,7 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
     } finally {
       setIsLoading(false)
     }
-  }, [setMapOptions, updateMetric])
+  }, [updateMetric])
 
   const retry = useCallback(() => {
     if (lastParamsRef.current) runAnalysis(lastParamsRef.current)

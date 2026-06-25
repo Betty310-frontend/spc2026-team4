@@ -23,7 +23,7 @@ export function convertToChatMessages(sdkMessages: UIMessage[]): ChatMessage[] {
           textAccum += (part as { text: string }).text
         }
 
-        if (part.type === 'dynamic-tool') {
+        if (part.type === 'dynamic-tool' || part.type.startsWith('tool-')) {
           if (textAccum.trim()) {
             result.push({
               id: `${msg.id}-${msgIdx}-text-${textPartCount++}`,
@@ -33,20 +33,55 @@ export function convertToChatMessages(sdkMessages: UIMessage[]): ChatMessage[] {
             textAccum = ''
           }
 
+          if (part.type === 'dynamic-tool') {
+            const p = part as {
+              type: 'dynamic-tool'
+              toolName: string
+              toolCallId: string
+              state: string
+              input?: unknown
+              output?: unknown
+              errorText?: string
+            }
+
+            const toolMsg: ToolCallMessage = {
+              id: `${p.toolCallId}-${msgIdx}`,
+              role: 'tool',
+              toolName: p.toolName,
+              params:
+                p.state !== 'input-streaming' && p.input
+                  ? (p.input as Record<string, unknown>)
+                  : {},
+              status:
+                p.state === 'output-available'
+                  ? 'done'
+                  : p.state === 'output-error'
+                    ? 'error'
+                    : 'loading',
+              resultText:
+                p.state === 'output-available'
+                  ? formatToolResult(p.toolName, p.output)
+                  : undefined,
+              errorText: p.state === 'output-error' ? p.errorText : undefined,
+            }
+            result.push(toolMsg)
+            continue
+          }
+
           const p = part as {
-            type: 'dynamic-tool'
-            toolName: string
+            type: `tool-${string}`
             toolCallId: string
             state: string
             input?: unknown
             output?: unknown
             errorText?: string
           }
+          const toolName = part.type.replace(/^tool-/, '')
 
           const toolMsg: ToolCallMessage = {
             id: `${p.toolCallId}-${msgIdx}`,
             role: 'tool',
-            toolName: p.toolName,
+            toolName,
             params:
               p.state !== 'input-streaming' && p.input ? (p.input as Record<string, unknown>) : {},
             status:
@@ -56,7 +91,7 @@ export function convertToChatMessages(sdkMessages: UIMessage[]): ChatMessage[] {
                   ? 'error'
                   : 'loading',
             resultText:
-              p.state === 'output-available' ? formatToolResult(p.toolName, p.output) : undefined,
+              p.state === 'output-available' ? formatToolResult(toolName, p.output) : undefined,
             errorText: p.state === 'output-error' ? p.errorText : undefined,
           }
           result.push(toolMsg)

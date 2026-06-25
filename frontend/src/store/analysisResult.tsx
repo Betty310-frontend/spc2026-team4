@@ -1,7 +1,8 @@
 'use client'
 
-import { createContext, useContext, useReducer } from 'react'
+import { createContext, useContext, useEffect, useMemo, useReducer } from 'react'
 import type { MapOptions } from '@/types/api'
+import type { NormalizedCompetitors } from '@/lib/agent-event-bridge'
 
 export type MetricStatus = 'idle' | 'loading' | 'done' | 'error' | 'fallback'
 
@@ -70,21 +71,77 @@ interface AnalysisResultContextValue extends AnalysisResult {
   updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
   setReportData: (report: ReportData) => void
   setMapOptions: (mapOptions: MapOptions | null) => void
+  applyCompetitorsFromRest: (payload: NormalizedCompetitors) => void
   reset: () => void
 }
 
 const AnalysisResultCtx = createContext<AnalysisResultContextValue | null>(null)
 
+type AnalysisResultActions = {
+  updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
+  setReportData: (report: ReportData) => void
+  setMapOptions: (mapOptions: MapOptions | null) => void
+  applyCompetitorsFromRest: (payload: NormalizedCompetitors) => void
+  reset: () => void
+}
+
+let analysisResultActions: AnalysisResultActions | null = null
+
+export function applyCompetitorsFromRest(payload: NormalizedCompetitors): void {
+  analysisResultActions?.applyCompetitorsFromRest(payload)
+}
+
 export function AnalysisResultProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, defaultResult)
 
-  const value: AnalysisResultContextValue = {
-    ...state,
-    updateMetric: (key, data) => dispatch({ type: 'UPDATE_METRIC', key, data }),
-    setReportData: (report) => dispatch({ type: 'SET_REPORT', report }),
-    setMapOptions: (mapOptions) => dispatch({ type: 'SET_MAP_OPTIONS', mapOptions }),
-    reset: () => dispatch({ type: 'RESET' }),
-  }
+  const value = useMemo<AnalysisResultContextValue>(() => {
+    const applyCompetitors = (payload: NormalizedCompetitors) => {
+      const status = payload.fallback ? 'fallback' : 'done'
+      const source =
+        payload.source && payload.asOf
+          ? `${payload.source} · ${payload.asOf}`
+          : payload.source ?? payload.asOf
+
+      dispatch({
+        type: 'UPDATE_METRIC',
+        key: 'competitors',
+        data: {
+          status,
+          value: `${payload.sameCount}곳`,
+          badge: `총 ${payload.total ?? payload.items.length}곳`,
+          source,
+          isFallback: payload.fallback,
+        },
+      })
+
+      if (payload.center) {
+        dispatch({
+          type: 'SET_MAP_OPTIONS',
+          mapOptions: {
+            center: payload.center,
+            radius_m: payload.radiusM ?? 500,
+            competitors: payload.items,
+          },
+        })
+      }
+    }
+
+    return {
+      ...state,
+      updateMetric: (key, data) => dispatch({ type: 'UPDATE_METRIC', key, data }),
+      setReportData: (report) => dispatch({ type: 'SET_REPORT', report }),
+      setMapOptions: (mapOptions) => dispatch({ type: 'SET_MAP_OPTIONS', mapOptions }),
+      applyCompetitorsFromRest: applyCompetitors,
+      reset: () => dispatch({ type: 'RESET' }),
+    }
+  }, [state])
+
+  useEffect(() => {
+    analysisResultActions = value
+    return () => {
+      if (analysisResultActions === value) analysisResultActions = null
+    }
+  }, [value])
 
   return <AnalysisResultCtx.Provider value={value}>{children}</AnalysisResultCtx.Provider>
 }

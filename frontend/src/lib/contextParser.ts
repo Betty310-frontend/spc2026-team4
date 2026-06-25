@@ -13,3 +13,38 @@ export function parseContextFromToolArgs(
     })
   }
 }
+
+export function parseContextFromAssistantText(
+  text: string,
+  setAnalysisContext: (ctx: Partial<AnalysisContext>) => void,
+) {
+  const locationMatch =
+    text.match(/(?:해당 위치는|위치는)\s*([가-힣0-9]+(?:동|가|로|리|읍|면|구))/) ??
+    text.match(/([가-힣0-9]+(?:동|가|로|리|읍|면|구))\s*(?:에\s*속합니다|에\s*속해 있습니다|입니다)/)
+  const radiusMatch = text.match(/반경\s*(\d+)\s*m/i)
+  const industryMatch =
+    text.match(/반경[^\n]*?내\s*([가-힣0-9]+)\s*(?:는|은)\s*\d+\s*개/) ??
+    text.match(/내\s*([가-힣0-9]+)\s*(?:는|은)\s*\d+\s*개/) ??
+    text.match(/([가-힣0-9]+)\s*(?:업종|업종은|업종이|업종가)/) ??
+    text.match(/내\s*([가-힣0-9]+)\s*업종/) ??
+    text.match(/([가-힣0-9]+)\s*업종은/) ??
+    text.match(/([가-힣0-9]+)\s*업종/)
+
+  const partial: Partial<AnalysisContext> = {}
+
+  if (locationMatch?.[1]) {
+    partial.location = locationMatch[1]
+  }
+
+  if (radiusMatch?.[1]) {
+    partial.radius = Number(radiusMatch[1])
+  }
+
+  if (industryMatch?.[1]) {
+    partial.industry = industryMatch[1]
+  }
+
+  if (Object.keys(partial).length > 0) {
+    setAnalysisContext(partial)
+  }
+}
