@@ -6,10 +6,11 @@ import { UIMessage } from 'ai'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useAnalysisContext } from '@/store/analysisContext'
 
-import { useAnalysisResult } from '@/store/analysisResult'
+import { useAnalysisResult, abortMapUpdate, setChatLoading } from '@/store/analysisResult'
 import { convertToChatMessages } from '@/lib/messageConverter'
 import { handleToolResult } from '@/lib/toolResultParser'
 import {
+  extractRadiusFromText,
   parseContextFromToolArgs,
   parseContextFromAssistantText,
 } from '@/lib/contextParser'
@@ -110,6 +111,7 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
     },
 
     onError(error: Error) {
+      abortMapUpdate()
       console.error('[agent:error]', error)
       onChatErrorRef.current?.(error)
     },
@@ -130,14 +132,29 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
   const chatMessages = useMemo(() => convertToChatMessages(messages), [messages])
   const isLoading = status === 'submitted' || status === 'streaming'
 
+  useEffect(() => {
+    setChatLoading(isLoading)
+  }, [isLoading])
+
   const append = (text: string) => {
+    const parsedRadius = extractRadiusFromText(text)
+    const nextRadius = parsedRadius ?? analysisContextRef.current.radius ?? 500
+
+    if (parsedRadius != null && parsedRadius !== analysisContextRef.current.radius) {
+      setAnalysisContext({ radius: parsedRadius })
+      analysisContextRef.current = {
+        ...analysisContextRef.current,
+        radius: parsedRadius,
+      }
+    }
+
     sendMessage(
       { text },
       {
         body: {
           station: analysisContextRef.current.location ?? '',
           category: analysisContextRef.current.industry ?? '',
-          radius: analysisContextRef.current.radius ?? 500,
+          radius: nextRadius,
         },
       },
     )
@@ -153,8 +170,10 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
     agentStatus: isLoading ? ('analyzing' as const) : ('idle' as const),
     stop,
     startNewAnalysis: () => {
+      abortMapUpdate()
       appliedCompetitorMessagesRef.current.clear()
       reset()
+      setChatLoading(false)
     },
   }
 }

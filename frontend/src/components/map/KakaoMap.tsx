@@ -5,12 +5,14 @@ import { useState, useCallback, useEffect } from 'react'
 import { Loader2 } from 'lucide-react'
 import useKakaoLoader from '@/hooks/use-kakao-loader'
 import { useCompetitorClusterer } from '@/hooks/use-competitor-clusterer'
+import { useAnalysisContext } from '@/store/analysisContext'
 import { CandidatePin } from './CandidatePin'
 import { CompetitorMarker } from './CompetitorMarker'
 import { KakaoMapProps } from '@/types/map'
 import { CompetitorItem } from '@/types/api'
 import { CLUSTER_THRESHOLD, CLUSTER_MIN_LEVEL } from '@/constants/map'
 import { radiusToLevel } from '@/lib/radius-sync'
+import { completeMapUpdate, getCurrentMapToken } from '@/store/analysisResult'
 
 const SEOUL_CENTER = { lat: 37.5665, lng: 126.978 }
 
@@ -36,16 +38,24 @@ function ClustererLayer({
 
 export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
   const [sdkLoading] = useKakaoLoader()
+  const { analysisContext } = useAnalysisContext()
 
   // 우선순위: 분석 결과 > 현재 위치(GPS) > 서울 시청 기본값
   const mapCenter = options?.center ?? userLocation ?? SEOUL_CENTER
-  const derivedLevel = options ? radiusToLevel(options.radius_m) : userLocation ? 6 : 7
+  const displayRadiusM = analysisContext.radius ?? options?.radius_m ?? 500
+  const derivedLevel =
+    options || analysisContext.radius != null ? radiusToLevel(displayRadiusM) : userLocation ? 6 : 7
+  const hasOptions = !!options
+  const centerLat = options?.center.lat
+  const centerLng = options?.center.lng
+  const radiusM = displayRadiusM
+  const competitorCount = options?.competitors.length ?? 0
 
   // 현재 지도 레벨 — 클러스터/개별 모드 전환 판단
   // onZoomChanged가 Map의 level prop 변경 시에도 발생하므로 별도 리셋 불필요
   const [currentLevel, setCurrentLevel] = useState(derivedLevel)
 
-  const needsCluster = (options?.competitors.length ?? 0) >= CLUSTER_THRESHOLD
+  const needsCluster = competitorCount >= CLUSTER_THRESHOLD
 
   // 클러스터 모드: 마커 50개 이상 AND 레벨이 CLUSTER_MIN_LEVEL 초과
   // 개별 모드: !clusterMode — 두 모드가 절대 동시에 활성화되지 않음
@@ -62,6 +72,25 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
     setCurrentLevel(derivedLevel)
   }, [derivedLevel])
 
+  useEffect(() => {
+    if (!hasOptions) return
+
+    const token = getCurrentMapToken()
+    let frame1 = 0
+    let frame2 = 0
+
+    frame1 = requestAnimationFrame(() => {
+      frame2 = requestAnimationFrame(() => {
+        completeMapUpdate(token)
+      })
+    })
+
+    return () => {
+      cancelAnimationFrame(frame1)
+      cancelAnimationFrame(frame2)
+    }
+  }, [hasOptions, centerLat, centerLng, radiusM, competitorCount])
+
   // <Map>을 조건부로 마운트/언마운트하면 sdkLoading 전환 시점에 Kakao SDK 내부
   // 객체에 .state 접근 충돌이 발생한다. 항상 마운트 유지하고 overlay로 로딩 표시.
   return (
@@ -77,7 +106,7 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
           <>
             <Circle
               center={{ lat: options.center.lat, lng: options.center.lng }}
-              radius={options.radius_m}
+              radius={displayRadiusM}
               strokeWeight={1.5}
               strokeColor={MARKER_COLOR.center}
               strokeOpacity={0.8}

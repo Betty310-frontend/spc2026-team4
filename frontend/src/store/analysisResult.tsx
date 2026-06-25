@@ -34,6 +34,15 @@ export interface AnalysisResult {
   population: MetricCard
   report: ReportData | null
   mapOptions: MapOptions | null
+  mapSync: MapSync
+  chatLoading: boolean
+}
+
+export interface MapSync {
+  token: number
+  pending: boolean
+  reason?: string
+  startedAt?: number
 }
 
 type MetricKey = 'competitors' | 'density' | 'population'
@@ -42,6 +51,10 @@ type Action =
   | { type: 'UPDATE_METRIC'; key: MetricKey; data: Partial<MetricCard> }
   | { type: 'SET_REPORT'; report: ReportData }
   | { type: 'SET_MAP_OPTIONS'; mapOptions: MapOptions | null }
+  | { type: 'SET_CHAT_LOADING'; loading: boolean }
+  | { type: 'BEGIN_MAP_UPDATE'; reason?: string }
+  | { type: 'COMPLETE_MAP_UPDATE'; token: number }
+  | { type: 'ABORT_MAP_UPDATE'; token?: number }
   | { type: 'RESET' }
 
 const defaultResult: AnalysisResult = {
@@ -50,6 +63,8 @@ const defaultResult: AnalysisResult = {
   population: { status: 'idle' },
   report: null,
   mapOptions: null,
+  mapSync: { token: 0, pending: false },
+  chatLoading: false,
 }
 
 function reducer(state: AnalysisResult, action: Action): AnalysisResult {
@@ -60,6 +75,26 @@ function reducer(state: AnalysisResult, action: Action): AnalysisResult {
       return { ...state, report: action.report }
     case 'SET_MAP_OPTIONS':
       return { ...state, mapOptions: action.mapOptions }
+    case 'SET_CHAT_LOADING':
+      return { ...state, chatLoading: action.loading }
+    case 'BEGIN_MAP_UPDATE':
+      return {
+        ...state,
+        mapSync: {
+          token: state.mapSync.token + 1,
+          pending: true,
+          reason: action.reason,
+          startedAt: Date.now(),
+        },
+      }
+    case 'COMPLETE_MAP_UPDATE':
+      return action.token === state.mapSync.token
+        ? { ...state, mapSync: { ...state.mapSync, pending: false } }
+        : state
+    case 'ABORT_MAP_UPDATE':
+      return !action.token || action.token === state.mapSync.token
+        ? { ...state, mapSync: { ...state.mapSync, pending: false } }
+        : state
     case 'RESET':
       return defaultResult
     default:
@@ -71,6 +106,11 @@ interface AnalysisResultContextValue extends AnalysisResult {
   updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
   setReportData: (report: ReportData) => void
   setMapOptions: (mapOptions: MapOptions | null) => void
+  setChatLoading: (loading: boolean) => void
+  beginMapUpdate: (reason?: string) => void
+  completeMapUpdate: (token: number) => void
+  abortMapUpdate: (token?: number) => void
+  getCurrentMapToken: () => number
   applyCompetitorsFromRest: (payload: NormalizedCompetitors) => void
   reset: () => void
 }
@@ -81,6 +121,11 @@ type AnalysisResultActions = {
   updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
   setReportData: (report: ReportData) => void
   setMapOptions: (mapOptions: MapOptions | null) => void
+  setChatLoading: (loading: boolean) => void
+  beginMapUpdate: (reason?: string) => void
+  completeMapUpdate: (token: number) => void
+  abortMapUpdate: (token?: number) => void
+  getCurrentMapToken: () => number
   applyCompetitorsFromRest: (payload: NormalizedCompetitors) => void
   reset: () => void
 }
@@ -89,6 +134,26 @@ let analysisResultActions: AnalysisResultActions | null = null
 
 export function applyCompetitorsFromRest(payload: NormalizedCompetitors): void {
   analysisResultActions?.applyCompetitorsFromRest(payload)
+}
+
+export function beginMapUpdate(reason?: string): void {
+  analysisResultActions?.beginMapUpdate(reason)
+}
+
+export function setChatLoading(loading: boolean): void {
+  analysisResultActions?.setChatLoading(loading)
+}
+
+export function completeMapUpdate(token: number): void {
+  analysisResultActions?.completeMapUpdate(token)
+}
+
+export function abortMapUpdate(token?: number): void {
+  analysisResultActions?.abortMapUpdate(token)
+}
+
+export function getCurrentMapToken(): number {
+  return analysisResultActions?.getCurrentMapToken() ?? 0
 }
 
 export function AnalysisResultProvider({ children }: { children: React.ReactNode }) {
@@ -131,6 +196,11 @@ export function AnalysisResultProvider({ children }: { children: React.ReactNode
       updateMetric: (key, data) => dispatch({ type: 'UPDATE_METRIC', key, data }),
       setReportData: (report) => dispatch({ type: 'SET_REPORT', report }),
       setMapOptions: (mapOptions) => dispatch({ type: 'SET_MAP_OPTIONS', mapOptions }),
+      setChatLoading: (loading) => dispatch({ type: 'SET_CHAT_LOADING', loading }),
+      beginMapUpdate: (reason) => dispatch({ type: 'BEGIN_MAP_UPDATE', reason }),
+      completeMapUpdate: (token) => dispatch({ type: 'COMPLETE_MAP_UPDATE', token }),
+      abortMapUpdate: (token) => dispatch({ type: 'ABORT_MAP_UPDATE', token }),
+      getCurrentMapToken: () => state.mapSync.token,
       applyCompetitorsFromRest: applyCompetitors,
       reset: () => dispatch({ type: 'RESET' }),
     }

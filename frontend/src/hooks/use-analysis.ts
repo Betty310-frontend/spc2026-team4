@@ -1,7 +1,7 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useAnalysisResult } from '@/store/analysisResult'
+import { useAnalysisResult, abortMapUpdate } from '@/store/analysisResult'
 import {
   fetchCompetitors,
   fetchPopulation,
@@ -103,6 +103,8 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
         updateMetric('population', { status: 'fallback', value: '—', isFallback: true })
       }
     } catch (err) {
+      abortMapUpdate()
+
       // 치명적 에러 (competitors 실패) → 에이전트 에러 메시지로 전달
       updateMetric('competitors', { status: 'error' })
       updateMetric('population',  { status: 'error' })
@@ -124,6 +126,7 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
   }, [runAnalysis])
 
   const reset = useCallback(() => {
+    abortMapUpdate()
     setMapOptions(null)
     lastParamsRef.current = null
   }, [setMapOptions])

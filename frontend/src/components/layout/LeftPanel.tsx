@@ -1,12 +1,18 @@
 import { ReactNode } from 'react'
 import { TEXT_MUTED } from '@/styles/colors'
+import { LeftPaneSpinner } from '@/components/LeftPaneSpinner'
 
 interface LeftPanelProps {
   children: ReactNode
 }
 
 export default function LeftPanel({ children }: LeftPanelProps) {
-  return <div className="flex h-full flex-col gap-2 p-[10px]">{children}</div>
+  return (
+    <div className="relative flex h-full flex-col gap-2 p-[10px]">
+      {children}
+      <LeftPaneSpinner />
+    </div>
+  )
 }
 
 export function AnalysisDivider() {
