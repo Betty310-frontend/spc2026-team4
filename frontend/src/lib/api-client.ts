@@ -3,7 +3,6 @@ import type {
   CompetitorsResponse,
   PopulationResponse,
   CompetitionPercentileResponse,
-  RentResponse,
   H3HexagonItem,
 } from '@/types/api'
 
@@ -58,18 +57,6 @@ export async function fetchCompetitionPercentile(params: {
   query.set('업종', params.업종)
   if (params.반경 != null) query.set('반경', String(params.반경))
   return apiFetch(`/api/v1/competition-percentile?${query}`)
-}
-
-export async function fetchRent(params: {
-  행정동코드: string
-  업종: string
-  면적_sqm?: number
-}): Promise<RentResponse> {
-  const query = new URLSearchParams()
-  query.set('행정동코드', params.행정동코드)
-  query.set('업종', params.업종)
-  if (params.면적_sqm != null) query.set('면적_sqm', String(params.면적_sqm))
-  return apiFetch(`/api/v1/rent?${query}`)
 }
 
 export async function fetchH3Hexagons(params: {

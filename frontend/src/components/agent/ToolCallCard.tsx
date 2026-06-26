@@ -6,7 +6,6 @@ const TOOL_LOADING_TEXT: Record<string, string> = {
   search_competitors: '소상공인진흥공단 API 조회 중…',
   get_population_flow: '서울 열린데이터 광장 API 조회 중…',
   calc_competition_percentile: 'H3 정규화 퍼센타일 계산 중…',
-  get_rent_info: '국토부 임대료 데이터 조회 중…',
   get_positioning_data: '카카오플레이스 평점·가격대 조회 중…',
 }
 
