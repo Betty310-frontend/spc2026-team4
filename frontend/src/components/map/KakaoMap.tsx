@@ -1,26 +1,47 @@
 'use client'
 
-import { Map, Circle, useMap } from 'react-kakao-maps-sdk'
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useRef } from 'react'
 import { Loader2 } from 'lucide-react'
+import { Circle, Map, useMap } from 'react-kakao-maps-sdk'
 import useKakaoLoader from '@/hooks/use-kakao-loader'
 import { useCompetitorClusterer } from '@/hooks/use-competitor-clusterer'
 import { useAnalysisContext } from '@/store/analysisContext'
+import { reverseGeocode } from '@/lib/geocode'
+import { beginMapUpdate, completeMapUpdate, getCurrentMapToken } from '@/store/analysisResult'
 import { CandidatePin } from './CandidatePin'
 import { CompetitorMarker } from './CompetitorMarker'
+import { MapHints } from './MapHints'
 import { KakaoMapProps } from '@/types/map'
-import { CompetitorItem } from '@/types/api'
+import { CenterCoords, CompetitorItem } from '@/types/api'
 import { CLUSTER_THRESHOLD, CLUSTER_MIN_LEVEL } from '@/constants/map'
 import { radiusToLevel } from '@/lib/radius-sync'
-import { completeMapUpdate, getCurrentMapToken } from '@/store/analysisResult'
+import { INDIGO, MARKER_COLORS } from '@/styles/colors'
 
 const SEOUL_CENTER = { lat: 37.5665, lng: 126.978 }
+const KOREA_LAT_RANGE = { min: 33, max: 39 }
+const KOREA_LNG_RANGE = { min: 124, max: 132 }
+const DRAG_END_DEBOUNCE_MS = 400
 
-const MARKER_COLOR = {
-  center: '#2563EB',
-  same: '#E24B4A',
-  similar: '#EF9F27',
-} as const
+function isWithinKoreaBounds(center: CenterCoords) {
+  return (
+    center.lat >= KOREA_LAT_RANGE.min &&
+    center.lat <= KOREA_LAT_RANGE.max &&
+    center.lng >= KOREA_LNG_RANGE.min &&
+    center.lng <= KOREA_LNG_RANGE.max
+  )
+}
+
+function toLatLng(center: CenterCoords) {
+  return new window.kakao.maps.LatLng(center.lat, center.lng)
+}
+
+function getMarkerCenter(marker: kakao.maps.Marker): CenterCoords {
+  const position = marker.getPosition()
+  return {
+    lat: position.getLat(),
+    lng: position.getLng(),
+  }
+}
 
 // ClustererLayer: Map 내부에서만 useMap() 호출 가능 — Map 자식으로 배치
 // clusterMode=false 시 useCompetitorClusterer 내부에서 즉시 cleanup
@@ -38,17 +59,22 @@ function ClustererLayer({
 
 export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
   const [sdkLoading] = useKakaoLoader()
-  const { analysisContext } = useAnalysisContext()
-
-  // 우선순위: 분석 결과 > 현재 위치(GPS) > 서울 시청 기본값
-  const mapCenter = options?.center ?? userLocation ?? SEOUL_CENTER
+  const { analysisContext, setAnalysisContext } = useAnalysisContext()
+  const [dragging, setDragging] = useState(false)
+  const [pendingCenter, setPendingCenter] = useState<CenterCoords | null>(null)
+  const [previewCenter, setPreviewCenter] = useState<CenterCoords | null>(null)
+  const circleRef = useRef<kakao.maps.Circle | null>(null)
+  const centerMarkerRef = useRef<kakao.maps.Marker | null>(null)
+  const centerMarkerCleanupRef = useRef<(() => void) | null>(null)
+  const dragFrameRef = useRef<number | null>(null)
+  const dragEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+  const committedCenterRef = useRef<CenterCoords>(SEOUL_CENTER)
+  const dragOriginRef = useRef<CenterCoords>(SEOUL_CENTER)
+  const analysisContextRef = useRef(analysisContext)
+  const currentCenter = analysisContext.center ?? options?.center ?? userLocation ?? SEOUL_CENTER
   const displayRadiusM = analysisContext.radius ?? options?.radius_m ?? 500
   const derivedLevel =
     options || analysisContext.radius != null ? radiusToLevel(displayRadiusM) : userLocation ? 6 : 7
-  const hasOptions = !!options
-  const centerLat = options?.center.lat
-  const centerLng = options?.center.lng
-  const radiusM = displayRadiusM
   const competitorCount = options?.competitors.length ?? 0
 
   // 현재 지도 레벨 — 클러스터/개별 모드 전환 판단
@@ -66,6 +92,33 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
     setCurrentLevel(target.getLevel())
   }, [])
 
+  const syncOverlays = useCallback(
+    (center: CenterCoords, radius = displayRadiusM) => {
+      if (!window.kakao?.maps) return
+
+      const latLng = toLatLng(center)
+      circleRef.current?.setPosition(latLng)
+      circleRef.current?.setRadius(radius)
+      centerMarkerRef.current?.setPosition(latLng)
+    },
+    [displayRadiusM],
+  )
+
+  const rollbackToCenter = useCallback(
+    (center: CenterCoords) => {
+      committedCenterRef.current = center
+      syncOverlays(center)
+      setPreviewCenter(null)
+      setPendingCenter(null)
+      setDragging(false)
+    },
+    [syncOverlays],
+  )
+
+  useEffect(() => {
+    analysisContextRef.current = analysisContext
+  }, [analysisContext])
+
   useEffect(() => {
     // 반경 변경에 따라 지도의 기준 레벨을 외부 상태와 맞춘다.
     // eslint-disable-next-line react-hooks/set-state-in-effect
@@ -73,51 +126,193 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
   }, [derivedLevel])
 
   useEffect(() => {
-    if (!hasOptions) return
+    if (dragging || pendingCenter || previewCenter) return
 
-    const token = getCurrentMapToken()
-    let frame1 = 0
-    let frame2 = 0
+    committedCenterRef.current = currentCenter
+    syncOverlays(currentCenter, displayRadiusM)
+  }, [
+    currentCenter.lat,
+    currentCenter.lng,
+    displayRadiusM,
+    dragging,
+    pendingCenter,
+    previewCenter,
+    syncOverlays,
+    currentCenter,
+  ])
 
-    frame1 = requestAnimationFrame(() => {
-      frame2 = requestAnimationFrame(() => {
-        completeMapUpdate(token)
-      })
-    })
-
+  useEffect(() => {
     return () => {
-      cancelAnimationFrame(frame1)
-      cancelAnimationFrame(frame2)
+      centerMarkerCleanupRef.current?.()
+      centerMarkerCleanupRef.current = null
+      if (dragFrameRef.current != null) {
+        cancelAnimationFrame(dragFrameRef.current)
+        dragFrameRef.current = null
+      }
+      if (dragEndTimerRef.current != null) {
+        clearTimeout(dragEndTimerRef.current)
+        dragEndTimerRef.current = null
+      }
     }
-  }, [hasOptions, centerLat, centerLng, radiusM, competitorCount])
+  }, [])
+
+  const handleCircleCreate = useCallback((circle: kakao.maps.Circle) => {
+    circleRef.current = circle
+  }, [])
+
+  const handleDrag = useCallback((marker: kakao.maps.Marker) => {
+    if (dragFrameRef.current != null) return
+
+    dragFrameRef.current = requestAnimationFrame(() => {
+      dragFrameRef.current = null
+      const latLng = marker.getPosition()
+      circleRef.current?.setPosition(latLng)
+      centerMarkerRef.current?.setPosition(latLng)
+    })
+  }, [])
+
+  const handleMarkerCreate = useCallback(
+    (marker: kakao.maps.Marker) => {
+      centerMarkerCleanupRef.current?.()
+      centerMarkerRef.current = marker
+
+      if (!window.kakao?.maps?.event) return
+
+      const dragListener = () => handleDrag(marker)
+      window.kakao.maps.event.addListener(marker, 'drag', dragListener)
+
+      centerMarkerCleanupRef.current = () => {
+        window.kakao.maps.event.removeListener(marker, 'drag', dragListener)
+      }
+    },
+    [handleDrag],
+  )
+
+  const handleDragStart = useCallback((marker: kakao.maps.Marker) => {
+    if (dragEndTimerRef.current != null) {
+      clearTimeout(dragEndTimerRef.current)
+      dragEndTimerRef.current = null
+    }
+
+    const origin = committedCenterRef.current
+    dragOriginRef.current = origin
+    setDragging(true)
+    setPendingCenter(null)
+    syncOverlays(origin)
+    marker.setPosition(toLatLng(origin))
+  }, [syncOverlays])
+
+  const handleDragEnd = useCallback(
+    (marker: kakao.maps.Marker) => {
+      if (dragEndTimerRef.current != null) {
+        clearTimeout(dragEndTimerRef.current)
+      }
+
+      dragEndTimerRef.current = setTimeout(() => {
+        dragEndTimerRef.current = null
+        const center = getMarkerCenter(marker)
+        setDragging(false)
+
+        if (!isWithinKoreaBounds(center)) {
+          rollbackToCenter(dragOriginRef.current)
+          return
+        }
+
+        syncOverlays(center)
+        setPreviewCenter(center)
+        setPendingCenter(center)
+      }, DRAG_END_DEBOUNCE_MS)
+    },
+    [rollbackToCenter, syncOverlays],
+  )
+
+  const commitCenterChange = useCallback(
+    async (center: CenterCoords) => {
+      const context = analysisContextRef.current
+      const origin = dragOriginRef.current
+
+      if (!context.industry || !context.location) {
+        setAnalysisContext({ center })
+        committedCenterRef.current = center
+        setPendingCenter(null)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setPreviewCenter(null)
+          })
+        })
+        return
+      }
+
+      try {
+        const geoResult = await reverseGeocode(center.lat, center.lng)
+
+        if (!geoResult) {
+          throw new Error('핀 위치의 지역 정보를 확인할 수 없습니다.')
+        }
+
+        const nextToken = getCurrentMapToken() + 1
+        beginMapUpdate('pin-move')
+        setAnalysisContext({
+          center,
+          location: geoResult.dongName,
+          dongCode: geoResult.dongCode,
+          fullLocationName: geoResult.fullName,
+        })
+
+        committedCenterRef.current = center
+        setPendingCenter(null)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setPreviewCenter(null)
+            completeMapUpdate(nextToken)
+          })
+        })
+      } catch (error) {
+        console.error('[map:pin-move] 지역 재확인 실패', error)
+        rollbackToCenter(origin)
+      }
+    },
+    [rollbackToCenter, setAnalysisContext],
+  )
+
+  const handleConfirmCenterChange = useCallback(() => {
+    if (!pendingCenter) return
+    void commitCenterChange(pendingCenter)
+  }, [commitCenterChange, pendingCenter])
+
+  const handleCancelCenterChange = useCallback(() => {
+    rollbackToCenter(dragOriginRef.current)
+  }, [rollbackToCenter])
+
+  const visibleCenter = previewCenter ?? currentCenter
 
   // <Map>을 조건부로 마운트/언마운트하면 sdkLoading 전환 시점에 Kakao SDK 내부
   // 객체에 .state 접근 충돌이 발생한다. 항상 마운트 유지하고 overlay로 로딩 표시.
   return (
     <div className="relative min-h-0 flex-1">
-      <Map
-        center={mapCenter}
-        className="h-full w-full"
-        level={currentLevel}
-        onZoomChanged={handleZoomChanged}
-      >
+      <Map center={currentCenter} className="h-full w-full" level={currentLevel} onZoomChanged={handleZoomChanged}>
         {/* SDK 준비 후에만 하위 Kakao 컴포넌트 렌더 */}
         {options && !sdkLoading && (
           <>
             <Circle
-              center={{ lat: options.center.lat, lng: options.center.lng }}
+              center={visibleCenter}
               radius={displayRadiusM}
               strokeWeight={1.5}
-              strokeColor={MARKER_COLOR.center}
+              strokeColor={INDIGO[600]}
               strokeOpacity={0.8}
               strokeStyle="shortdash"
-              fillColor={MARKER_COLOR.center}
+              fillColor={INDIGO[600]}
               fillOpacity={0.05}
+              onCreate={handleCircleCreate}
             />
 
-            {/* 후보지 핀 — 항상 표시 */}
+            {/* 후보지 핀 — 드래그 가능 */}
             <CandidatePin
-              position={{ lat: options.center.lat, lng: options.center.lng }}
+              position={visibleCenter}
+              draggable
+              onCreate={handleMarkerCreate}
+              onDragStart={handleDragStart}
+              onDragEnd={handleDragEnd}
             />
 
             {/*
@@ -127,10 +322,7 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
                 false → 내부에서 즉시 cleanup (마커·클러스터러 제거)
             */}
             {needsCluster && (
-              <ClustererLayer
-                competitors={options.competitors}
-                clusterMode={clusterMode}
-              />
+              <ClustererLayer competitors={options.competitors} clusterMode={clusterMode} />
             )}
 
             {/*
@@ -141,12 +333,17 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
                 50개 이상, 줌아웃(레벨 >4): clusterMode=true → 렌더링 안 함
             */}
             {individualMode &&
-              options.competitors.map((c) => (
-                <CompetitorMarker key={c.id} competitor={c} />
-              ))}
+              options.competitors.map((c) => <CompetitorMarker key={c.id} competitor={c} />)}
           </>
         )}
       </Map>
+
+      <MapHints
+        dragging={dragging}
+        pending={pendingCenter != null}
+        onConfirm={handleConfirmCenterChange}
+        onCancel={handleCancelCenterChange}
+      />
 
       {/* SDK 초기 로딩 오버레이 */}
       {sdkLoading && (
@@ -159,9 +356,7 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
       {!sdkLoading && !options && !isLoading && (
         <div className="bg-background/50 pointer-events-none absolute inset-0 z-10 flex flex-col items-center justify-center gap-3 backdrop-blur-[2px]">
           <div className="border-border bg-background/80 flex flex-col items-center gap-1.5 rounded-xl border px-4 py-3 shadow-sm">
-            <span className="text-foreground text-sm font-medium">
-              창업 후보지를 분석해드릴게요
-            </span>
+            <span className="text-foreground text-sm font-medium">창업 후보지를 분석해드릴게요</span>
             <span className="text-muted-foreground text-center text-xs leading-relaxed">
               {userLocation
                 ? '업종과 창업 후보지를 알려주세요'
@@ -182,9 +377,9 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
       {/* 범례 */}
       {!sdkLoading && options && !isLoading && (
         <div className="border-border bg-background/90 absolute top-2 right-2 z-10 flex flex-col gap-1.5 rounded-md border px-2.5 py-2 shadow-sm backdrop-blur-sm">
-          <LegendItem color={MARKER_COLOR.center} label="내 후보지" />
-          <LegendItem color={MARKER_COLOR.same} label="동일 업종" />
-          <LegendItem color={MARKER_COLOR.similar} label="유사 업종" />
+          <LegendItem color={MARKER_COLORS.candidate} label="내 후보지" />
+          <LegendItem color={MARKER_COLORS.same} label="동일 업종" />
+          <LegendItem color={MARKER_COLORS.similar} label="유사 업종" />
         </div>
       )}
     </div>

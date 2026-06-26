@@ -21,6 +21,7 @@ export const INDIGO = {
 } as const
 
 // ── 중립 색상 ───────────────────────────────────────────────
+export const WHITE = '#ffffff'               // 기본 흰색
 export const SURFACE_MUTED = '#f7f7f5'          // 면책 문구·반경 칩 배경
 export const TEXT_MUTED = '#999999'              // 비활성/보조 레이블
 export const TEXT_SECONDARY = '#555555'          // 중간 대비 텍스트 (칩 레이블 등)
