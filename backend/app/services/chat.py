@@ -65,7 +65,8 @@ _SYSTEM = """
 너는 서울 소상공인 창업 리스크 해석 도구다.
 
 [도구 사용 규칙]
-- 사용자가 업종·위치를 처음 언급하거나 변경하면 반드시 search_competitors를 호출해라. 핵심시간대·유동인구·매출 질문이 섞여 있어도 search_competitors 하나로 모두 해결된다.
+- 사용자가 경쟁업체, 상권, 매출, 유동인구, 입지, 반경 분석을 요청하면 search_competitors를 호출해라.
+- 사용자가 법령, 인허가, 신고, 허가, 위생, 가맹계약, 표준계약서, 가맹금, 위약금, 계약해지, 창업 절차를 질문하면 search_competitors를 호출하지 말고 RAG 참고 문서를 우선 사용해 답해라.
 - get_population_flow는 경쟁업체 분석 이후 인구 흐름만 추가로 묻는 경우에만 호출해라.
 - 이미 분석된 결과에 대한 질문이나 추가 설명 요청은 도구 없이 답해라.
 - 위치 추출: 역명·동네명만 station으로. 예: "선정릉역 4번 출구" → "선정릉역", "홍대 근처" → "홍대입구역"
@@ -100,6 +101,11 @@ _SYSTEM = """
 - 응답 중 네가 직접 언급하는 모든 상호명·건물명·브랜드명은 첫 글자와 마지막 글자만 표시하고 중간을 *로 처리해라.
   예: "스타벅스" → "스***스", "현대빌딩" → "현***딩", "GS25" → "G*5"
 - 역명·행정동명·구명 등 공공 지리 정보는 그대로 표기해라.
+
+[RAG 사용 규칙]
+- 법령, 인허가, 창업 절차, 가맹계약, 표준계약서, 위생, 신고, 허가, 가맹금 반환 질문은 RAG 참고 문서를 최우선 근거로 답해라.
+- search_competitors는 상권 데이터 분석용이다.
+- 법령/계약 관련 질문에서는 상권 데이터보다 RAG 문서를 우선한다.
 
 [응답 규칙]
 - 도구 결과 데이터와 RAG 참고 문서만 근거로 삼아라. 데이터 외 추정은 "데이터가 없어 확인할 수 없습니다"로 답해라.
@@ -201,6 +207,26 @@ def _get_last_user_message(messages: list[UIMessage]) -> UIMessage:
 def _get_message_text(message: UIMessage) -> str:
     return next((p.text for p in message.parts if p.type == 'text'), message.content)
 
+def _infer_category_from_text(text: str) -> str:
+    aliases = {
+        '카페': ['카페', '커피', '커피숍'],
+        '미용실': ['미용실', '헤어샵', '미용'],
+        '입시학원': ['학원', '입시학원', '교습소'],
+        '편의점': ['편의점'],
+        '분식': ['분식', '떡볶이', '김밥'],
+        '고깃집': ['고깃집', '삼겹살', '돼지고기'],
+        '치킨': ['치킨'],
+        '네일샵': ['네일', '네일샵'],
+        '피부관리': ['피부관리', '피부 관리'],
+        '베이커리': ['베이커리', '빵집'],
+        '한식': ['한식', '백반', '국밥', '찌개'],
+    }
+
+    for display_name, keywords in aliases.items():
+        if any(keyword in text for keyword in keywords):
+            return display_name
+
+    return ''
 
 def _build_rag_message(
     current_category: str,
@@ -239,9 +265,13 @@ def _build_rag_message(
 다음은 업종 '{current_category}'와 관련된 RAG 참고 문서입니다.
 
 답변 규칙:
-1. 아래 근거를 우선 사용하세요.
-2. 근거에 없는 내용은 추측하지 말고 "문서에서 확인되지 않습니다"라고 말하세요.
-3. 답변 마지막에 참고한 문서명을 간단히 표시하세요.
+1. 아래 RAG 문서를 최우선 근거로 사용하세요.
+2. 법령, 인허가, 창업 절차, 가맹계약, 가맹금, 위약금, 계약해지 질문은 상권 분석 데이터보다 RAG 문서를 우선하세요.
+3. 문서에 없는 내용은 추측하지 말고 "문서에서 확인되지 않습니다"라고 말하세요.
+4. 답변 마지막에는 반드시 아래 형식으로 출처를 작성하세요.
+
+출처
+- 문서명 - 섹션명
 
 {rag_context}
 """.strip()
@@ -301,8 +331,10 @@ async def stream_ui(
         last_user = _get_last_user_message(messages)
         last_user_text = _get_message_text(last_user)
 
+        rag_category = current_category or _infer_category_from_text(last_user_text)
+
         rag_message, rag_sources = _build_rag_message(
-            current_category=current_category,
+            current_category=rag_category,
             question=last_user_text,
         )
 
