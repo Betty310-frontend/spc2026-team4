@@ -49,7 +49,6 @@ export function handleToolResult(
       break
     }
 
-    case 'get_rent_info':
     case 'get_positioning_data':
       break
 

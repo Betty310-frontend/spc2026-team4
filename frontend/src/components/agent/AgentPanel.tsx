@@ -48,19 +48,54 @@ export function AgentPanel() {
     onAgentMessage: addAgentMessage,
   })
   const prevRadiusRef = useRef<number | null>(analysisContext.radius)
+  const prevLocationRef = useRef<string | null>(analysisContext.location)
+  const prevCenterRef = useRef<{ lat: number; lng: number } | null>(analysisContext.center)
+  const centerLat = analysisContext.center?.lat ?? null
+  const centerLng = analysisContext.center?.lng ?? null
 
   // 에이전트가 업종·위치 컨텍스트를 파싱하면 자동으로 데이터 조회 시작
-  // radius는 의존성에서 제외 — runAnalysis 내부에서 radius 변경 시 재트리거 방지
+  // 핀 이동으로 location이 바뀌거나, 같은 location 안에서 center가 바뀌면 재분석한다.
   useEffect(() => {
     if (analysisContext.industry && analysisContext.location) {
       runAnalysis({
         위치: analysisContext.location,
         업종: analysisContext.industry,
         반경: analysisContext.radius ?? undefined,
+        lat: centerLat ?? undefined,
+        lng: centerLng ?? undefined,
+        행정동코드: analysisContext.dongCode ?? undefined,
       })
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [analysisContext.industry, analysisContext.location, analysisContext.radius])
+  }, [
+    analysisContext.industry,
+    analysisContext.location,
+    analysisContext.radius,
+    centerLat,
+    centerLng,
+    analysisContext.dongCode,
+  ])
+
+  useEffect(() => {
+    const prevLocation = prevLocationRef.current
+    const nextLocation = analysisContext.location
+    const prevCenter = prevCenterRef.current
+    const nextCenter = analysisContext.center
+
+    const centerChanged =
+      prevCenter != null &&
+      nextCenter != null &&
+      (prevCenter.lat !== nextCenter.lat || prevCenter.lng !== nextCenter.lng)
+
+    if (prevLocation && nextLocation && prevLocation !== nextLocation && centerChanged) {
+      addAgentMessage({
+        content: `지역이 ${nextLocation}으로 변경되어 다시 분석 중이에요.`,
+      })
+    }
+
+    prevLocationRef.current = nextLocation
+    prevCenterRef.current = nextCenter
+  }, [analysisContext.center, analysisContext.location, addAgentMessage])
 
   useEffect(() => {
     const prevRadius = prevRadiusRef.current

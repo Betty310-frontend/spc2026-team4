@@ -64,22 +64,6 @@ export interface CompetitionPercentileResponse {
   fallback: boolean
 }
 
-// ── /api/v1/rent ──────────────────────────────
-
-export interface RentResponse {
-  dong_name: string
-  업종: string
-  기준_면적_sqm: number
-  월_임대료_min: number | null
-  월_임대료_max: number | null
-  단위: string
-  data_source: string
-  base_date: string
-  fallback: boolean
-  fallback_reason: string | null
-  note: string
-}
-
 // ── /api/v1/h3-hexagons ───────────────────────
 
 export interface H3HexagonItem {

@@ -76,7 +76,6 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
           part.type === 'tool-search_competitors' ||
           part.type === 'tool-get_population_flow' ||
           part.type === 'tool-calc_competition_percentile' ||
-          part.type === 'tool-get_rent_info' ||
           part.type === 'tool-get_positioning_data'
         ) {
           if (!('output' in part)) continue

@@ -1,7 +1,6 @@
 'use client'
 
 import type { UIMessage } from 'ai'
-import { applyAnalysisContext } from '@/store/analysisContext'
 import { applyCompetitorsFromRest as applyCompetitorsFromAnalysisStore } from '@/store/analysisResult'
 import type { CompetitorItem } from '@/types/api'
 
@@ -98,9 +97,6 @@ export function normalizeCompetitors(input: CompetitorsApiResponse): NormalizedC
 
 export function applyCompetitors(normalized: NormalizedCompetitors): void {
   applyCompetitorsFromAnalysisStore(normalized)
-  if (normalized.center) {
-    applyAnalysisContext({ center: normalized.center })
-  }
 }
 
 export function applyAgentEventToStore(evt: AgentEvent): void {
