@@ -228,6 +228,35 @@ def _infer_category_from_text(text: str) -> str:
 
     return ''
 
+def _format_rag_context(rag_sources: list[dict]) -> str:
+    return '\n\n'.join(
+        (
+            f"[근거 {idx + 1}]\n"
+            f"문서: {source.get('document_title')}\n"
+            f"섹션: {source.get('section_title')}\n"
+            f"내용:\n{source.get('chunk_text')}"
+        )
+        for idx, source in enumerate(rag_sources)
+    )
+
+
+def _build_rag_prompt(current_category: str, rag_context: str) -> str:
+    return f"""
+다음은 업종 '{current_category}'와 관련된 RAG 참고 문서입니다.
+
+답변 규칙:
+1. 아래 RAG 문서를 최우선 근거로 사용하세요.
+2. 법령, 인허가, 창업 절차, 가맹계약, 가맹금, 위약금, 계약해지 질문은 상권 분석 데이터보다 RAG 문서를 우선하세요.
+3. 문서에 없는 내용은 추측하지 말고 "문서에서 확인되지 않습니다"라고 말하세요.
+4. 답변 마지막에는 반드시 아래 형식으로 출처를 작성하세요.
+
+출처
+- 문서명 - 섹션명
+
+{rag_context}
+""".strip()
+
+
 def _build_rag_message(
     current_category: str,
     question: str,
@@ -250,34 +279,10 @@ def _build_rag_message(
     if not top_sources:
         return None, []
 
-    rag_context = '\n\n'.join(
-        [
-            f"[근거 {idx + 1}]\n"
-            f"문서: {source.get('document_title')}\n"
-            f"섹션: {source.get('section_title')}\n"
-            f"내용:\n{source.get('chunk_text')}"
-            for idx, source in enumerate(top_sources)
-        ]
-    )
+    rag_context = _format_rag_context(top_sources)
+    rag_prompt = _build_rag_prompt(current_category, rag_context)
 
-    rag_message = SystemMessage(
-        content=f"""
-다음은 업종 '{current_category}'와 관련된 RAG 참고 문서입니다.
-
-답변 규칙:
-1. 아래 RAG 문서를 최우선 근거로 사용하세요.
-2. 법령, 인허가, 창업 절차, 가맹계약, 가맹금, 위약금, 계약해지 질문은 상권 분석 데이터보다 RAG 문서를 우선하세요.
-3. 문서에 없는 내용은 추측하지 말고 "문서에서 확인되지 않습니다"라고 말하세요.
-4. 답변 마지막에는 반드시 아래 형식으로 출처를 작성하세요.
-
-출처
-- 문서명 - 섹션명
-
-{rag_context}
-""".strip()
-    )
-
-    return rag_message, top_sources
+    return SystemMessage(content=rag_prompt), top_sources
 
 
 async def stream_ui(
