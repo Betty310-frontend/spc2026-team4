@@ -4,6 +4,7 @@ import {
   normalizeCompetitors,
   type CompetitorsApiResponse,
 } from '@/lib/agent-event-bridge'
+import { getTierBadgeLabel } from '@/lib/metric-badge'
 import type {
   CalcCompetitionPercentileToolResponse,
   GetPopulationFlowToolResponse,
@@ -27,21 +28,25 @@ function setSearchCompetitorMetrics(
   const competitorCount = metrics.competitor_count
   const competitionPercentile = metrics.competition_percentile
   const population = metrics.avg_peak_population
+  const competitionBadge = getTierBadgeLabel(competitionPercentile) ?? '서울 하위권'
+  const source = `소상공인시장진흥공단 · ${metrics.data_reference_month}`
 
   updateMetric('competitors', {
     status: 'done',
     value: formatNumber(competitorCount),
     unit: '곳',
-    badge: `총 ${formatNumber(competitorCount)}곳`,
+    badge: competitionBadge,
     badgeTier: competitionPercentile >= 70 ? 'high' : competitionPercentile >= 40 ? 'mid' : 'low',
+    source,
   })
 
   updateMetric('density', {
     status: 'done',
     value: formatNumber(competitionPercentile),
     unit: 'P',
-    badge: competitionPercentile >= 70 ? `서울 상위 ${100 - competitionPercentile}%` : competitionPercentile >= 40 ? '서울 중위권' : `서울 하위 ${competitionPercentile}%`,
+    badge: competitionBadge,
     badgeTier: competitionPercentile >= 70 ? 'high' : competitionPercentile >= 40 ? 'mid' : 'low',
+    source,
   })
 
   if (population != null) {

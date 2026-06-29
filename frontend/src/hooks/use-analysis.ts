@@ -14,6 +14,7 @@ import {
 import { applyCompetitors, normalizeCompetitors } from '@/lib/agent-event-bridge'
 import { isValidCategory } from '@/lib/category'
 import { reverseGeocode } from '@/lib/geocode'
+import { getTierBadgeLabel } from '@/lib/metric-badge'
 import { getApiErrorMessage } from '@/constants/error-messages'
 import type { AgentMessage } from '@/types/message'
 
@@ -97,24 +98,29 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
           반경: params.반경,
         }),
         populationDongCode
-          ? fetchPopulation({ 행정동코드: populationDongCode, 업종: params.업종 })
+          ? fetchPopulation({
+              행정동코드: populationDongCode,
+              업종: params.업종,
+              시간대: ['11'],
+            })
           : Promise.reject(new Error('행정동코드 없음')),
       ])
 
       if (density.status === 'fulfilled') {
         const d = density.value
+        const densityBadge = d.label || getTierBadgeLabel(d.percentile) || undefined
         updateMetric('density', {
           status: d.fallback ? 'fallback' : 'done',
           value: formatNumber(d.percentile),
           unit: 'P',
-          badge: d.label,
+          badge: densityBadge,
           badgeTier: d.tier as 'high' | 'mid' | 'low',
           source: `${d.data_source} · ${d.base_date}`,
           isFallback: d.fallback,
         })
         // 경쟁업체 카드 배지도 density 결과로 보강
         updateMetric('competitors', {
-          badge: d.label,
+          badge: densityBadge,
           badgeTier: d.tier as 'high' | 'mid' | 'low',
         })
       } else {
@@ -125,21 +131,15 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
       if (pop.status === 'fulfilled') {
         const p = pop.value
         const percentile = p.percentile
+        const populationBadge = getTierBadgeLabel(percentile) || undefined
         updateMetric('population', {
           status: p.fallback ? 'fallback' : 'done',
           value: formatNumber(p.weighted_avg),
           unit: '명',
-          badge:
-            percentile != null
-              ? `서울 상위 ${100 - percentile}%`
-              : p.time_weights_applied?.length
-                ? p.time_weights_applied.join(' · ')
-                : undefined,
+          badge: populationBadge,
           badgeTier:
             percentile == null
-              ? p.time_weights_applied?.length
-                ? 'info'
-                : undefined
+              ? undefined
               : percentile >= 70
                 ? 'high'
                 : percentile >= 40

@@ -3,31 +3,35 @@
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { useAnalysisResult, type MetricCard } from '@/store/analysisResult'
-import { BADGE_COLORS } from '@/styles/colors'
+import { getMetricBadgeColor } from '@/lib/metric-badge'
 
 type MetricKey = 'competitors' | 'density' | 'population'
+type BadgeDirection = 'positive' | 'negative'
 
 const METRIC_META: Record<
   MetricKey,
-  { label: string; unit: string; accent: string; valueTone: string }
+  { label: string; unit: string; accent: string; valueTone: string; badgeDirection: BadgeDirection }
 > = {
   competitors: {
     label: '동일 업종 수',
     unit: '곳',
     accent: '#E24B4A',
     valueTone: 'text-[#7B1E1D]',
+    badgeDirection: 'negative',
   },
   density: {
     label: '경쟁 밀집도',
     unit: 'P',
     accent: '#EF9F27',
     valueTone: 'text-[#5C3500]',
+    badgeDirection: 'negative',
   },
   population: {
     label: '유동인구',
     unit: '명',
     accent: '#5C5FC4',
     valueTone: 'text-[#1F2366]',
+    badgeDirection: 'positive',
   },
 }
 
@@ -56,10 +60,12 @@ function MetricValue({
   card,
   unit,
   tone,
+  badgeDirection,
 }: {
   card: MetricCard
   unit: string
   tone: string
+  badgeDirection: BadgeDirection
 }) {
   if (card.status === 'loading') {
     return (
@@ -77,7 +83,7 @@ function MetricValue({
   const formatted = formatMetric(card, unit)
   if (!formatted) return null
 
-  const badgeColor = card.badgeTier ? BADGE_COLORS[card.badgeTier] : null
+  const badgeColor = getMetricBadgeColor(badgeDirection, card.badgeTier)
 
   return (
     <div className="mt-2">
@@ -137,7 +143,12 @@ export function MetricCards() {
               <div className="flex items-start justify-between gap-2">
                 <p className="text-xs font-medium text-muted-foreground">{meta.label}</p>
               </div>
-              <MetricValue card={card} unit={meta.unit} tone={meta.valueTone} />
+              <MetricValue
+                card={card}
+                unit={meta.unit}
+                tone={meta.valueTone}
+                badgeDirection={meta.badgeDirection}
+              />
             </CardContent>
           </Card>
         )
