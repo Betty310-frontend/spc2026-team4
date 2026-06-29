@@ -17,9 +17,7 @@ class Settings(BaseSettings):
     supabase_url: str = ''
     supabase_key: str = ''
 
-    pg_local_url: str = ''
     pg_cloud_url: str = ''
-    redis_local_url: str = ''
     redis_cloud_url: str = ''
 
     public_data_api_key: str = ''

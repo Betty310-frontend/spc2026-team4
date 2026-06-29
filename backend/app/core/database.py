@@ -43,21 +43,8 @@ async def init_engine() -> None:
     global _engine, _async_session_factory
     settings = get_settings()
 
-    if settings.pg_local_url:
-        engine = await _try_engine(settings.pg_local_url)
-        if engine:
-            print(f'[DB] 로컬 연결 성공: {settings.pg_local_url}')
-            _engine = engine
-            _async_session_factory = async_sessionmaker(
-                bind=_engine, class_=AsyncSession, expire_on_commit=False
-            )
-            return
-        print(f'[DB] 로컬 연결 실패: {settings.pg_local_url}')
-
     if not settings.pg_cloud_url:
-        raise RuntimeError(
-            '[DB] 로컬 연결 실패 — .env.local에 DATABASE_CLOUD_URL을 설정하세요.'
-        )
+        raise RuntimeError('[DB] DATABASE_CLOUD_URL이 설정되지 않았습니다.')
 
     engine = await _try_engine(settings.pg_cloud_url)
     if engine:
@@ -68,7 +55,7 @@ async def init_engine() -> None:
         )
         return
 
-    raise RuntimeError('[DB] 로컬/클라우드 모두 연결 불가')
+    raise RuntimeError('[DB] 클라우드 연결 불가')
 
 
 def get_engine() -> AsyncEngine:

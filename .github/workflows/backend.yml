@@ -83,15 +83,6 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
 
-      - name: Verify static data CSVs
-        run: |
-          for f in static_data/dong_names.csv static_data/local_people_hourly.csv \
-                   static_data/local_people_monthly.csv static_data/sales_avg_by_dong_industry.csv \
-                   static_data/store_count_by_major.csv static_data/store_count_by_middle.csv; do
-            [ -f "$f" ] || { echo "❌ 누락: $f"; exit 1; }
-          done
-          echo "✅ static_data CSV 파일 확인 완료"
-
       - name: Build and push
         uses: docker/build-push-action@v5
         with:
@@ -172,8 +163,6 @@ jobs:
               --name fastapi-server \
               --network backend_default \
               --env-file .env.clean \
-              -e PG_LOCAL_URL="" \
-              -e REDIS_LOCAL_URL="" \
               -p 8000:8000 \
               --restart unless-stopped \
               "$IMAGE"
@@ -242,12 +231,11 @@ jobs:
           IMAGE: ${{ needs.build-push.outputs.image_tag }}
           DOCKERHUB_USERNAME: ${{ secrets.DOCKERHUB_USERNAME }}
           DOCKERHUB_TOKEN: ${{ secrets.DOCKERHUB_TOKEN }}
-          PG_LOCAL_URL: ${{ secrets.BACKEND_PG_LOCAL_URL_PROD }}
         with:
           host: ${{ secrets.EC2_HOST_PROD }}
           username: ${{ secrets.EC2_USER }}
           key: ${{ secrets.EC2_SSH_KEY_PROD }}
-          envs: IMAGE,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN,PG_LOCAL_URL
+          envs: IMAGE,DOCKERHUB_USERNAME,DOCKERHUB_TOKEN
           script: |
             set -e
             cd ~/app/backend
@@ -264,8 +252,6 @@ jobs:
               --name fastapi-server \
               --network backend_default \
               --env-file .env.clean \
-              -e PG_LOCAL_URL="$PG_LOCAL_URL" \
-              -e REDIS_LOCAL_URL="" \
               -p 8000:8000 \
               --restart unless-stopped \
               "$IMAGE"

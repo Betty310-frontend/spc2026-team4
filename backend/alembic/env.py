@@ -22,24 +22,11 @@ target_metadata = Base.metadata
 
 
 def get_url() -> str:
-    settings = get_settings()
-    return settings.pg_cloud_url or settings.pg_local_url
+    return get_settings().pg_cloud_url
 
 
 async def get_url_async() -> str:
-    settings = get_settings()
-    # Try local database first, fallback to cloud database if local fails
-    try:
-        from sqlalchemy import text
-        from sqlalchemy.ext.asyncio import create_async_engine
-
-        engine = create_async_engine(settings.pg_local_url)
-        async with engine.connect() as conn:
-            await conn.execute(text('SELECT 1'))
-        await engine.dispose()
-        return settings.pg_local_url
-    except Exception:
-        return settings.pg_cloud_url or settings.pg_local_url
+    return get_settings().pg_cloud_url
 
 
 def include_object(object, name, type_, reflected, compare_to):
