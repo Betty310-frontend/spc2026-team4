@@ -14,7 +14,6 @@ from app.core.cache import cache_or_compute
 from app.core.cache_keys import (
     competition_key,
     h3_hexagons_key,
-    market_key,
     population_dong_key,
     population_key,
 )
