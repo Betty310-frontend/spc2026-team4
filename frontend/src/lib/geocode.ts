@@ -1,7 +1,12 @@
 export interface GeoResult {
   dongName: string // 예: "연남동"
-  dongCode: string // 행정동 코드 예: "1144071000"
+  dongCode: string // population API용 8자리 코드 예: "11440710"
   fullName: string // 예: "서울 마포구 연남동"
+}
+
+function normalizeRegionCode(code: unknown): string | null {
+  if (typeof code !== 'string' || code.length < 2) return null
+  return code.slice(0, -2)
 }
 
 /**
@@ -30,22 +35,23 @@ export function reverseGeocode(lat: number, lng: number): Promise<GeoResult | nu
       }
 
       // region_type 'B' = 행정동, 'H' = 법정동
-      // 배열 순서는 보통 행정동(B) → 법정동(H) 이지만 명시적으로 찾음
+      // 화면 표시는 행정동(B) 기준을 유지하고, population API에는 법정동(H) 기반 8자리 코드를 사용한다.
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const region = result.find((r: any) => r.region_type === 'B') ?? result[0]
+      const adminRegion = result.find((r: any) => r.region_type === 'B') ?? result[0]
+      const legalRegion = result.find((r: any) => r.region_type === 'H') ?? adminRegion
 
-      if (!region) {
+      if (!adminRegion || !legalRegion) {
         resolve(null)
         return
       }
 
       resolve({
-        dongName: region.region_3depth_name as string,
-        dongCode: region.code as string,
+        dongName: adminRegion.region_3depth_name as string,
+        dongCode: normalizeRegionCode(legalRegion.code) ?? '',
         fullName: [
-          region.region_1depth_name,
-          region.region_2depth_name,
-          region.region_3depth_name,
+          adminRegion.region_1depth_name,
+          adminRegion.region_2depth_name,
+          adminRegion.region_3depth_name,
         ]
           .filter(Boolean)
           .join(' '),

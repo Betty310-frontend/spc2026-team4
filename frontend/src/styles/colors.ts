@@ -37,9 +37,9 @@ export const MARKER_COLORS = {
 
 // ── 지표 카드 배지 (tier 기반) ─────────────────────────────
 export const BADGE_COLORS = {
-  high: { bg: '#F09595', text: '#501313' }, // 경쟁 매우 높음 — Red 200
-  mid:  { bg: '#EF9F27', text: '#412402' }, // 경쟁 보통      — Amber 400
-  low:  { bg: '#97C459', text: '#173404' }, // 경쟁 낮음      — Green 200
+  high: { bg: '#97C459', text: '#173404' }, // 상위권 — Green 200
+  mid:  { bg: '#EF9F27', text: '#412402' }, // 중위권 — Amber 400
+  low:  { bg: '#F09595', text: '#501313' }, // 하위권 — Red 200
   info: { bg: INDIGO[50], text: INDIGO[800] }, // 정보 — Indigo
 } as const
 
