@@ -1,4 +1,5 @@
 import { AnalysisContext } from '@/types/analysis'
+import { normalizeCategory } from '@/lib/category'
 
 export function extractRadiusFromText(text: string): number | null {
   const radiusMatch =
@@ -17,10 +18,24 @@ export function parseContextFromToolArgs(
   setAnalysisContext: (ctx: Partial<AnalysisContext>) => void,
 ) {
   if (toolName === 'search_competitors') {
+    const rawCategory =
+      (typeof args.category === 'string' && args.category) ||
+      (typeof args['업종'] === 'string' && args['업종']) ||
+      null
+    const rawLocation =
+      (typeof args.station === 'string' && args.station) ||
+      (typeof args.location === 'string' && args.location) ||
+      (typeof args['위치'] === 'string' && args['위치']) ||
+      null
+    const rawRadius =
+      (typeof args.radius === 'number' && args.radius) ||
+      (typeof args['반경'] === 'number' && args['반경']) ||
+      null
+
     setAnalysisContext({
-      industry: args['업종'] as string,
-      location: args['위치'] as string,
-      radius: args['반경'] as number,
+      industry: normalizeCategory(rawCategory) ?? rawCategory,
+      location: rawLocation,
+      radius: rawRadius,
     })
   }
 }
@@ -30,17 +45,9 @@ export function parseContextFromAssistantText(
   setAnalysisContext: (ctx: Partial<AnalysisContext>) => void,
 ) {
   const locationMatch =
-    text.match(/(?:해당 위치는|위치는)\s*([가-힣0-9]+(?:동|가|로|리|읍|면|구))/) ??
-    text.match(/([가-힣0-9]+(?:동|가|로|리|읍|면|구))\s*(?:에\s*속합니다|에\s*속해 있습니다|입니다)/)
+    text.match(/(?:해당 위치는|위치는)\s*([가-힣0-9]+(?:역|동|가|로|리|읍|면|구))/) ??
+    text.match(/([가-힣0-9]+(?:역|동|가|로|리|읍|면|구))\s*(?:에\s*속합니다|에\s*속해 있습니다|입니다)/)
   const radiusMatch = extractRadiusFromText(text)
-  const industryMatch =
-    text.match(/반경[^\n]*?내\s*([가-힣0-9]+)\s*(?:는|은)\s*\d+\s*개/) ??
-    text.match(/내\s*([가-힣0-9]+)\s*(?:는|은)\s*\d+\s*개/) ??
-    text.match(/([가-힣0-9]+)\s*(?:업종|업종은|업종이|업종가)/) ??
-    text.match(/내\s*([가-힣0-9]+)\s*업종/) ??
-    text.match(/([가-힣0-9]+)\s*업종은/) ??
-    text.match(/([가-힣0-9]+)\s*업종/)
-
   const partial: Partial<AnalysisContext> = {}
 
   if (locationMatch?.[1]) {
@@ -49,10 +56,6 @@ export function parseContextFromAssistantText(
 
   if (radiusMatch != null) {
     partial.radius = radiusMatch
-  }
-
-  if (industryMatch?.[1]) {
-    partial.industry = industryMatch[1]
   }
 
   if (Object.keys(partial).length > 0) {

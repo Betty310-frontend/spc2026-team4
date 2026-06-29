@@ -64,11 +64,85 @@ export interface CompetitionPercentileResponse {
   fallback: boolean
 }
 
+// ── chat tool outputs ─────────────────────────
+
+export interface MarketAnalysisMetrics {
+  competitor_count: number
+  competition_percentile: number
+  monthly_avg_sales_amt: number | null
+  monthly_avg_sales_cnt: number | null
+  per_store_est_amt: number | null
+  per_store_est_cnt: number | null
+  weekday_avg_amt: number | null
+  weekend_avg_amt: number | null
+  male_avg_amt: number | null
+  female_avg_amt: number | null
+  sales_by_timeslot: unknown
+  peak_sales_slot: string | null
+  sales_by_age: unknown
+  top_sales_age: string | null
+  avg_peak_population: number | null
+  peak_population_hour: string | null
+  hourly_population: unknown
+  male_pop_ratio: number | null
+  female_pop_ratio: number | null
+  population_by_age_ratio: unknown
+  top_population_age: string | null
+  data_reference_month: string
+}
+
+export interface SearchCompetitorsToolTopCompetitor {
+  analysis_name: string
+  display_name: string
+  category: string
+}
+
+export interface SearchCompetitorsToolResponse {
+  summary: string
+  station: string
+  category: string
+  radius_m: number
+  dong_name: string | null
+  top_competitors: SearchCompetitorsToolTopCompetitor[]
+  metrics: MarketAnalysisMetrics
+  summarize: Record<string, unknown>
+}
+
+export interface GetPopulationFlowToolResponse {
+  station: string
+  dong_name: string | null
+  avg_peak_population: number | null
+  peak_hours_label: string | null
+  peak_population_hour: string | null
+  hourly_population: unknown
+  male_pop_ratio: number | null
+  female_pop_ratio: number | null
+  population_by_age_ratio: unknown
+  top_population_age: string | null
+  data_source: string
+  base_date: string
+}
+
+export interface CalcCompetitionPercentileToolResponse {
+  station: string
+  category: string
+  radius_m: number
+  dong_name: string | null
+  competitor_count: number
+  competition_percentile: number
+  percentile_label: string
+}
+
 // ── /api/v1/h3-hexagons ───────────────────────
 
 export interface H3HexagonItem {
   h3Index: string
   count: number
+}
+
+export interface CompetitionSurfaceItem {
+  h3: string
+  p: number
 }
 
 // ── map 관련 ──────────────────────────────────

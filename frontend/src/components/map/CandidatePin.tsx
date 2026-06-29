@@ -1,30 +1,40 @@
 'use client'
 
 import { useMemo } from 'react'
-import { CustomOverlayMap, MapMarker } from 'react-kakao-maps-sdk'
+import { MapMarker } from 'react-kakao-maps-sdk'
 import { INDIGO } from '@/styles/colors'
 
 interface CandidatePinProps {
   position: { lat: number; lng: number }
   draggable?: boolean
+  isDragging?: boolean
   zIndex?: number
   onCreate?: (marker: kakao.maps.Marker) => void
   onDragStart?: (marker: kakao.maps.Marker) => void
   onDragEnd?: (marker: kakao.maps.Marker) => void
 }
 
-function createDragHandleImage() {
+function createPinImage(isDragging: boolean) {
+  const body = isDragging ? INDIGO[400] : INDIGO[600]
+  const shadowOpacity = isDragging ? 0.16 : 0.25
   const svg =
-    `<svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 18 18">` +
-    `<circle cx="9" cy="9" r="6.5" fill="${INDIGO[600]}" stroke="#ffffff" stroke-width="2"/>` +
+    `<svg xmlns="http://www.w3.org/2000/svg" width="34" height="46" viewBox="0 0 34 46" fill="none">` +
+    `<defs>` +
+    `<filter id="shadow" x="-20%" y="-10%" width="140%" height="140%">` +
+    `<feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="#111827" flood-opacity="${shadowOpacity}" />` +
+    `</filter>` +
+    `</defs>` +
+    `<path d="M17 44C17 44 4 29.3 4 18.6C4 11.2 9.8 5.4 17 5.4C24.2 5.4 30 11.2 30 18.6C30 29.3 17 44 17 44Z" fill="${body}" filter="url(#shadow)"/>` +
+    `<circle cx="17" cy="18" r="6.2" fill="#ffffff" opacity="0.96"/>` +
+    `<circle cx="17" cy="18" r="3.5" fill="${body}"/>` +
     `</svg>`
 
   return {
     src: `data:image/svg+xml,${encodeURIComponent(svg)}`,
-    size: { width: 18, height: 18 },
+    size: { width: 34, height: 46 },
     options: {
-      offset: { x: 9, y: 9 },
-      alt: '중심 위치 핀',
+      offset: { x: 17, y: 44 },
+      alt: '분석 중심 핀',
     },
   }
 }
@@ -32,70 +42,26 @@ function createDragHandleImage() {
 export function CandidatePin({
   position,
   draggable = false,
+  isDragging = false,
   zIndex = 10,
   onCreate,
   onDragStart,
   onDragEnd,
 }: CandidatePinProps) {
-  const image = useMemo(() => createDragHandleImage(), [])
+  const image = useMemo(() => createPinImage(isDragging), [isDragging])
 
   return (
-    <>
-      <CustomOverlayMap position={position} yAnchor={0.5} xAnchor={0.5} zIndex={zIndex}>
-        <div className="relative flex items-center justify-center" style={{ pointerEvents: 'none' }}>
-          <span
-            className="absolute inline-flex animate-ping rounded-full"
-            style={{
-              width: 32,
-              height: 32,
-              background: INDIGO[600],
-              opacity: 0.4,
-              animationDuration: '1.8s',
-              pointerEvents: 'none',
-            }}
-          />
-          <span
-            className="absolute inline-flex animate-ping rounded-full"
-            style={{
-              width: 46,
-              height: 46,
-              background: INDIGO[600],
-              opacity: 0.2,
-              animationDuration: '1.8s',
-              animationDelay: '0.4s',
-              pointerEvents: 'none',
-            }}
-          />
-          <div
-            style={{
-              width: 16,
-              height: 16,
-              background: INDIGO[600],
-              border: '3px solid #fff',
-              borderRadius: '50%',
-              boxShadow: '0 2px 6px rgba(37,99,235,0.5)',
-              position: 'relative',
-              zIndex: 1,
-              pointerEvents: 'auto',
-            }}
-          />
-        </div>
-      </CustomOverlayMap>
-
-      {draggable && (
-        <MapMarker
-          position={position}
-          image={image}
-          draggable
-          clickable={false}
-          opacity={0.01}
-          zIndex={zIndex + 1}
-          title="분석 중심 핀"
-          onCreate={onCreate}
-          onDragStart={onDragStart}
-          onDragEnd={onDragEnd}
-        />
-      )}
-    </>
+    <MapMarker
+      position={position}
+      image={image}
+      draggable={draggable}
+      clickable={false}
+      opacity={isDragging ? 0.82 : 1}
+      zIndex={zIndex}
+      title="분석 중심 핀"
+      onCreate={onCreate}
+      onDragStart={onDragStart}
+      onDragEnd={onDragEnd}
+    />
   )
 }

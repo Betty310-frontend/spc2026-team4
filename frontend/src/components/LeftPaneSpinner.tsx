@@ -8,7 +8,7 @@ const SHOW_DELAY_MS = 150
 const MIN_VISIBLE_MS = 300
 
 export function LeftPaneSpinner() {
-  const { mapSync, chatLoading } = useAnalysisResult()
+  const { mapSync, isLoading } = useAnalysisResult()
   const [visible, setVisible] = useState(false)
   const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -28,9 +28,18 @@ export function LeftPaneSpinner() {
 
     clearTimers()
 
-    const active = mapSync.pending || chatLoading
+    const active = mapSync.pending || isLoading
+    const immediate = mapSync.reason === 'pin-move'
 
     if (active) {
+      if (immediate) {
+        showTimerRef.current = setTimeout(() => {
+          visibleSinceRef.current = Date.now()
+          setVisible(true)
+        }, 0)
+        return clearTimers
+      }
+
       if (!visible) {
         showTimerRef.current = setTimeout(() => {
           visibleSinceRef.current = Date.now()
@@ -55,7 +64,7 @@ export function LeftPaneSpinner() {
     }, remaining)
 
     return clearTimers
-  }, [mapSync.pending, chatLoading, visible])
+  }, [mapSync.pending, mapSync.reason, isLoading, visible])
 
   if (!visible) return null
 

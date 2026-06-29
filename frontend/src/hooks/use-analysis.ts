@@ -1,13 +1,19 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect } from 'react'
-import { useAnalysisResult, abortMapUpdate } from '@/store/analysisResult'
+import { useCallback, useRef, useEffect } from 'react'
+import { useAnalysisContext } from '@/store/analysisContext'
+import {
+  useAnalysisResult,
+  abortMapUpdate,
+} from '@/store/analysisResult'
 import {
   fetchCompetitors,
   fetchPopulation,
   fetchCompetitionPercentile,
 } from '@/lib/api-client'
 import { applyCompetitors, normalizeCompetitors } from '@/lib/agent-event-bridge'
+import { isValidCategory } from '@/lib/category'
+import { reverseGeocode } from '@/lib/geocode'
 import { getApiErrorMessage } from '@/constants/error-messages'
 import type { AgentMessage } from '@/types/message'
 
@@ -24,10 +30,17 @@ interface UseAnalysisOptions {
   onAgentMessage?: (message: Omit<AgentMessage, 'id' | 'role'>) => void
 }
 
+function formatNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  return new Intl.NumberFormat('ko-KR').format(value)
+}
+
 export function useAnalysis(options: UseAnalysisOptions = {}) {
-  const { updateMetric, setMapOptions } = useAnalysisResult()
-  const [isLoading, setIsLoading] = useState(false)
+  const { setAnalysisContext } = useAnalysisContext()
+  const { updateMetric, setMapOptions, startLoading, stopLoading, isLoading } =
+    useAnalysisResult()
   const lastParamsRef = useRef<AnalysisParams | null>(null)
+  const setAnalysisContextRef = useRef(setAnalysisContext)
 
   // options를 ref로 캡처해 useCallback 의존성 안정화
   const onAgentMessageRef = useRef(options.onAgentMessage)
@@ -35,13 +48,22 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
     onAgentMessageRef.current = options.onAgentMessage
   }, [options.onAgentMessage])
 
+  useEffect(() => {
+    setAnalysisContextRef.current = setAnalysisContext
+  }, [setAnalysisContext])
+
   const runAnalysis = useCallback(async (params: AnalysisParams) => {
-    setIsLoading(true)
     lastParamsRef.current = params
+
+    if (!isValidCategory(params.업종)) {
+      return
+    }
+
     updateMetric('competitors', { status: 'loading' })
     updateMetric('population',  { status: 'loading' })
     updateMetric('density',     { status: 'loading' })
 
+    startLoading('analysis')
     try {
       // Step 1: 경쟁업체 조회 (center 좌표 확보)
       const comp = await fetchCompetitors({
@@ -54,6 +76,18 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
 
       applyCompetitors(normalizeCompetitors(comp))
 
+      let populationDongCode = params.행정동코드 ?? null
+      if (!populationDongCode && comp.center) {
+        const geoResult = await reverseGeocode(comp.center.lat, comp.center.lng)
+        if (geoResult?.dongCode) {
+          populationDongCode = geoResult.dongCode
+          setAnalysisContextRef.current({
+            dongCode: geoResult.dongCode,
+            fullLocationName: geoResult.fullName,
+          })
+        }
+      }
+
       // Step 2: density + population 병렬 조회
       const [density, pop] = await Promise.allSettled([
         fetchCompetitionPercentile({
@@ -62,8 +96,8 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
           업종: params.업종,
           반경: params.반경,
         }),
-        params.행정동코드
-          ? fetchPopulation({ 행정동코드: params.행정동코드, 업종: params.업종 })
+        populationDongCode
+          ? fetchPopulation({ 행정동코드: populationDongCode, 업종: params.업종 })
           : Promise.reject(new Error('행정동코드 없음')),
       ])
 
@@ -71,7 +105,8 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
         const d = density.value
         updateMetric('density', {
           status: d.fallback ? 'fallback' : 'done',
-          value: `${d.percentile}P`,
+          value: formatNumber(d.percentile),
+          unit: 'P',
           badge: d.label,
           badgeTier: d.tier as 'high' | 'mid' | 'low',
           source: `${d.data_source} · ${d.base_date}`,
@@ -89,18 +124,33 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
 
       if (pop.status === 'fulfilled') {
         const p = pop.value
-        const percentile = p.percentile ?? 0
+        const percentile = p.percentile
         updateMetric('population', {
           status: p.fallback ? 'fallback' : 'done',
-          value: `${percentile}P`,
-          badge: `서울 상위 ${100 - percentile}%`,
-          badgeTier: percentile >= 70 ? 'high' : percentile >= 40 ? 'mid' : 'low',
+          value: formatNumber(p.weighted_avg),
+          unit: '명',
+          badge:
+            percentile != null
+              ? `서울 상위 ${100 - percentile}%`
+              : p.time_weights_applied?.length
+                ? p.time_weights_applied.join(' · ')
+                : undefined,
+          badgeTier:
+            percentile == null
+              ? p.time_weights_applied?.length
+                ? 'info'
+                : undefined
+              : percentile >= 70
+                ? 'high'
+                : percentile >= 40
+                  ? 'mid'
+                  : 'low',
           source: `${p.data_source} · ${p.base_date}`,
           isFallback: p.fallback,
         })
       } else {
         // 행정동코드 없으면 fallback 처리
-        updateMetric('population', { status: 'fallback', value: '—', isFallback: true })
+        updateMetric('population', { status: 'fallback', value: '—', unit: '명', isFallback: true })
       }
     } catch (err) {
       abortMapUpdate()
@@ -117,9 +167,9 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
         isError: true,
       })
     } finally {
-      setIsLoading(false)
+      stopLoading('analysis')
     }
-  }, [updateMetric])
+  }, [startLoading, stopLoading, updateMetric])
 
   const retry = useCallback(() => {
     if (lastParamsRef.current) runAnalysis(lastParamsRef.current)

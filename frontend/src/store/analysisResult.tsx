@@ -9,8 +9,9 @@ export type MetricStatus = 'idle' | 'loading' | 'done' | 'error' | 'fallback'
 export interface MetricCard {
   status: MetricStatus
   value?: string
+  unit?: string
   badge?: string
-  badgeTier?: 'high' | 'mid' | 'low'
+  badgeTier?: 'high' | 'mid' | 'low' | 'info'
   source?: string
   isFallback?: boolean
 }
@@ -35,7 +36,8 @@ export interface AnalysisResult {
   report: ReportData | null
   mapOptions: MapOptions | null
   mapSync: MapSync
-  chatLoading: boolean
+  loadingKeys: Set<LoadingKey>
+  isLoading: boolean
 }
 
 export interface MapSync {
@@ -46,15 +48,24 @@ export interface MapSync {
 }
 
 type MetricKey = 'competitors' | 'density' | 'population'
+export type LoadingKey =
+  | 'analysis'
+  | 'chat'
+  | 'competitors'
+  | 'population'
+  | 'competition-percentile'
+  | 'h3-hexagons'
 
 type Action =
   | { type: 'UPDATE_METRIC'; key: MetricKey; data: Partial<MetricCard> }
   | { type: 'SET_REPORT'; report: ReportData }
   | { type: 'SET_MAP_OPTIONS'; mapOptions: MapOptions | null }
-  | { type: 'SET_CHAT_LOADING'; loading: boolean }
   | { type: 'BEGIN_MAP_UPDATE'; reason?: string }
   | { type: 'COMPLETE_MAP_UPDATE'; token: number }
   | { type: 'ABORT_MAP_UPDATE'; token?: number }
+  | { type: 'START_LOADING'; key: LoadingKey }
+  | { type: 'STOP_LOADING'; key: LoadingKey }
+  | { type: 'CLEAR_LOADING' }
   | { type: 'RESET' }
 
 const defaultResult: AnalysisResult = {
@@ -64,7 +75,8 @@ const defaultResult: AnalysisResult = {
   report: null,
   mapOptions: null,
   mapSync: { token: 0, pending: false },
-  chatLoading: false,
+  loadingKeys: new Set<LoadingKey>(),
+  isLoading: false,
 }
 
 function reducer(state: AnalysisResult, action: Action): AnalysisResult {
@@ -75,8 +87,6 @@ function reducer(state: AnalysisResult, action: Action): AnalysisResult {
       return { ...state, report: action.report }
     case 'SET_MAP_OPTIONS':
       return { ...state, mapOptions: action.mapOptions }
-    case 'SET_CHAT_LOADING':
-      return { ...state, chatLoading: action.loading }
     case 'BEGIN_MAP_UPDATE':
       return {
         ...state,
@@ -95,6 +105,20 @@ function reducer(state: AnalysisResult, action: Action): AnalysisResult {
       return !action.token || action.token === state.mapSync.token
         ? { ...state, mapSync: { ...state.mapSync, pending: false } }
         : state
+    case 'START_LOADING': {
+      if (state.loadingKeys.has(action.key)) return state
+      const loadingKeys = new Set(state.loadingKeys)
+      loadingKeys.add(action.key)
+      return { ...state, loadingKeys, isLoading: loadingKeys.size > 0 }
+    }
+    case 'STOP_LOADING': {
+      if (!state.loadingKeys.has(action.key)) return state
+      const loadingKeys = new Set(state.loadingKeys)
+      loadingKeys.delete(action.key)
+      return { ...state, loadingKeys, isLoading: loadingKeys.size > 0 }
+    }
+    case 'CLEAR_LOADING':
+      return { ...state, loadingKeys: new Set<LoadingKey>(), isLoading: false }
     case 'RESET':
       return defaultResult
     default:
@@ -106,7 +130,8 @@ interface AnalysisResultContextValue extends AnalysisResult {
   updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
   setReportData: (report: ReportData) => void
   setMapOptions: (mapOptions: MapOptions | null) => void
-  setChatLoading: (loading: boolean) => void
+  startLoading: (key: LoadingKey) => void
+  stopLoading: (key: LoadingKey) => void
   beginMapUpdate: (reason?: string) => void
   completeMapUpdate: (token: number) => void
   abortMapUpdate: (token?: number) => void
@@ -121,7 +146,8 @@ type AnalysisResultActions = {
   updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
   setReportData: (report: ReportData) => void
   setMapOptions: (mapOptions: MapOptions | null) => void
-  setChatLoading: (loading: boolean) => void
+  startLoading: (key: LoadingKey) => void
+  stopLoading: (key: LoadingKey) => void
   beginMapUpdate: (reason?: string) => void
   completeMapUpdate: (token: number) => void
   abortMapUpdate: (token?: number) => void
@@ -140,8 +166,12 @@ export function beginMapUpdate(reason?: string): void {
   analysisResultActions?.beginMapUpdate(reason)
 }
 
-export function setChatLoading(loading: boolean): void {
-  analysisResultActions?.setChatLoading(loading)
+export function startLoading(key: LoadingKey): void {
+  analysisResultActions?.startLoading(key)
+}
+
+export function stopLoading(key: LoadingKey): void {
+  analysisResultActions?.stopLoading(key)
 }
 
 export function completeMapUpdate(token: number): void {
@@ -158,53 +188,61 @@ export function getCurrentMapToken(): number {
 
 export function AnalysisResultProvider({ children }: { children: React.ReactNode }) {
   const [state, dispatch] = useReducer(reducer, defaultResult)
+  const actions = useMemo(
+    () => ({
+      updateMetric: (key: MetricKey, data: Partial<MetricCard>) =>
+        dispatch({ type: 'UPDATE_METRIC', key, data }),
+      setReportData: (report: ReportData) => dispatch({ type: 'SET_REPORT', report }),
+      setMapOptions: (mapOptions: MapOptions | null) =>
+        dispatch({ type: 'SET_MAP_OPTIONS', mapOptions }),
+      beginMapUpdate: (reason?: string) => dispatch({ type: 'BEGIN_MAP_UPDATE', reason }),
+      completeMapUpdate: (token: number) => dispatch({ type: 'COMPLETE_MAP_UPDATE', token }),
+      abortMapUpdate: (token?: number) => dispatch({ type: 'ABORT_MAP_UPDATE', token }),
+      getCurrentMapToken: () => state.mapSync.token,
+      applyCompetitorsFromRest: (payload: NormalizedCompetitors) => {
+        const status = payload.fallback ? 'fallback' : 'done'
+        const source =
+          payload.source && payload.asOf
+            ? `${payload.source} · ${payload.asOf}`
+            : payload.source ?? payload.asOf
 
-  const value = useMemo<AnalysisResultContextValue>(() => {
-    const applyCompetitors = (payload: NormalizedCompetitors) => {
-      const status = payload.fallback ? 'fallback' : 'done'
-      const source =
-        payload.source && payload.asOf
-          ? `${payload.source} · ${payload.asOf}`
-          : payload.source ?? payload.asOf
-
-      dispatch({
-        type: 'UPDATE_METRIC',
-        key: 'competitors',
-        data: {
-          status,
-          value: `${payload.sameCount}곳`,
-          badge: `총 ${payload.total ?? payload.items.length}곳`,
-          source,
-          isFallback: payload.fallback,
-        },
-      })
-
-      if (payload.center) {
         dispatch({
-          type: 'SET_MAP_OPTIONS',
-          mapOptions: {
-            center: payload.center,
-            radius_m: payload.radiusM ?? 500,
-            competitors: payload.items,
+          type: 'UPDATE_METRIC',
+          key: 'competitors',
+          data: {
+            status,
+            value: `${payload.sameCount}곳`,
+            unit: '곳',
+            badge: `총 ${payload.total ?? payload.items.length}곳`,
+            source,
+            isFallback: payload.fallback,
           },
         })
-      }
-    }
 
+        if (payload.center) {
+          dispatch({
+            type: 'SET_MAP_OPTIONS',
+            mapOptions: {
+              center: payload.center,
+              radius_m: payload.radiusM ?? 500,
+              competitors: payload.items,
+            },
+          })
+        }
+      },
+      reset: () => dispatch({ type: 'RESET' }),
+      startLoading: (key: LoadingKey) => dispatch({ type: 'START_LOADING', key }),
+      stopLoading: (key: LoadingKey) => dispatch({ type: 'STOP_LOADING', key }),
+    }),
+    [state.mapSync.token],
+  )
+
+  const value = useMemo<AnalysisResultContextValue>(() => {
     return {
       ...state,
-      updateMetric: (key, data) => dispatch({ type: 'UPDATE_METRIC', key, data }),
-      setReportData: (report) => dispatch({ type: 'SET_REPORT', report }),
-      setMapOptions: (mapOptions) => dispatch({ type: 'SET_MAP_OPTIONS', mapOptions }),
-      setChatLoading: (loading) => dispatch({ type: 'SET_CHAT_LOADING', loading }),
-      beginMapUpdate: (reason) => dispatch({ type: 'BEGIN_MAP_UPDATE', reason }),
-      completeMapUpdate: (token) => dispatch({ type: 'COMPLETE_MAP_UPDATE', token }),
-      abortMapUpdate: (token) => dispatch({ type: 'ABORT_MAP_UPDATE', token }),
-      getCurrentMapToken: () => state.mapSync.token,
-      applyCompetitorsFromRest: applyCompetitors,
-      reset: () => dispatch({ type: 'RESET' }),
+      ...actions,
     }
-  }, [state])
+  }, [actions, state])
 
   useEffect(() => {
     analysisResultActions = value

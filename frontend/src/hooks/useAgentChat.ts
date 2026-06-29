@@ -6,7 +6,7 @@ import { UIMessage } from 'ai'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useAnalysisContext } from '@/store/analysisContext'
 
-import { useAnalysisResult, abortMapUpdate, setChatLoading } from '@/store/analysisResult'
+import { useAnalysisResult, abortMapUpdate } from '@/store/analysisResult'
 import { convertToChatMessages } from '@/lib/messageConverter'
 import { handleToolResult } from '@/lib/toolResultParser'
 import {
@@ -30,7 +30,8 @@ interface UseAgentChatOptions {
 
 export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
   const { analysisContext, setAnalysisContext } = useAnalysisContext()
-  const { updateMetric, setReportData, reset } = useAnalysisResult()
+  const { updateMetric, setReportData, reset, startLoading, stopLoading } =
+    useAnalysisResult()
   const [input, setInput] = useState('')
   const analysisContextRef = useRef(analysisContext)
   const appliedCompetitorMessagesRef = useRef<Set<string>>(new Set())
@@ -47,6 +48,10 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
 
   const transport = useMemo(() => new DefaultChatTransport(), [])
 
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null
+  }
+
   const { messages, sendMessage, status, stop } = useChat({
     transport,
 
@@ -55,8 +60,37 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
 
       if (typeof dataPartAny.type === 'string' && dataPartAny.type.startsWith('data-')) {
         if (dataPartAny.type === 'data-search_competitors' && dataPartAny.data) {
-          if (typeof dataPartAny.data === 'object' && dataPartAny.data !== null) {
+          if (isRecord(dataPartAny.data)) {
             applyCompetitors(normalizeCompetitors(dataPartAny.data as CompetitorsApiResponse))
+          }
+        } else if (
+          dataPartAny.type === 'data-tool-start' &&
+          isRecord(dataPartAny.data) &&
+          dataPartAny.data.tool === 'search_competitors' &&
+          isRecord(dataPartAny.data.input)
+        ) {
+          parseContextFromToolArgs(
+            'search_competitors',
+            dataPartAny.data.input,
+            setAnalysisContext,
+          )
+        } else if (
+          dataPartAny.type === 'data-map' &&
+          isRecord(dataPartAny.data)
+        ) {
+          const center = isRecord(dataPartAny.data.center)
+            ? {
+                lat: typeof dataPartAny.data.center.lat === 'number' ? dataPartAny.data.center.lat : null,
+                lng: typeof dataPartAny.data.center.lng === 'number' ? dataPartAny.data.center.lng : null,
+              }
+            : null
+
+          if (center?.lat != null && center?.lng != null) {
+            setAnalysisContext({ center: { lat: center.lat, lng: center.lng } })
+          }
+
+          if (typeof dataPartAny.data.dong_name === 'string' && dataPartAny.data.dong_name) {
+            setAnalysisContext({ location: dataPartAny.data.dong_name })
           }
         }
         return
@@ -65,6 +99,14 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
       if (typeof dataPartAny.data === 'string') {
         const evt = parseAgentEventLine(dataPartAny.data)
         if (evt) applyAgentEventToStore(evt)
+      } else if (isRecord(dataPartAny.data) && typeof dataPartAny.type === 'string') {
+        const evt = {
+          event: dataPartAny.type.replace(/^data-/, ''),
+          ...dataPartAny.data,
+        }
+        if (isRecord(evt) && typeof evt.event === 'string') {
+          applyAgentEventToStore(evt as { event: 'tool' | 'status' | 'delta' })
+        }
       }
     },
 
@@ -86,6 +128,7 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
           }
           const toolName = p.toolName ?? part.type.replace(/^tool-/, '')
           handleToolResult(toolName, p.output, updateMetric, setReportData)
+
           // TODO: 에이전트 onFinish 콜백에서 파싱 결과를 setAnalysisContext로 주입
           parseContextFromToolArgs(
             toolName,
@@ -132,10 +175,17 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
   const isLoading = status === 'submitted' || status === 'streaming'
 
   useEffect(() => {
-    setChatLoading(isLoading)
-  }, [isLoading])
+    if (isLoading) {
+      startLoading('chat')
+      return () => stopLoading('chat')
+    }
+
+    stopLoading('chat')
+    return undefined
+  }, [isLoading, startLoading, stopLoading])
 
   const append = (text: string) => {
+    setInput('')
     const parsedRadius = extractRadiusFromText(text)
     const nextRadius = parsedRadius ?? analysisContextRef.current.radius ?? 500
 
@@ -157,7 +207,6 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
         },
       },
     )
-    setInput('')
   }
 
   return {
@@ -172,7 +221,7 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
       abortMapUpdate()
       appliedCompetitorMessagesRef.current.clear()
       reset()
-      setChatLoading(false)
+      stopLoading('chat')
     },
   }
 }

@@ -78,11 +78,18 @@ function filterAiSdkStream(body: ReadableStream<Uint8Array>): ReadableStream<Uin
               AI_SDK_KNOWN_TYPES.has(t) || // 인식된 타입 — 통과
               t.startsWith('data-') // custom data-* 타입 — 통과
             ) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`))
+            } else {
+              // 백엔드 커스텀 이벤트는 AI SDK custom data 이벤트로 재포장해 프론트에서 읽게 한다.
               controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`),
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: `data-${t}`,
+                    data: parsed,
+                  })}\n\n`,
+                ),
               )
             }
-            // "session", "thread" 등 미인식 타입 — 무시
           } catch {
             // JSON 파싱 실패 — 그대로 통과
             controller.enqueue(encoder.encode(event + '\n\n'))
@@ -152,6 +159,28 @@ export async function proxyPostStream(req: Request, path: string): Promise<Respo
         'Cache-Control': 'no-cache',
       },
     })
+  } catch (err) {
+    console.error(`[proxy:POST] ${path} 오류:`, err)
+    return Response.json(
+      { error: 'FastAPI 서버에 연결할 수 없습니다.' },
+      { status: 503 },
+    )
+  }
+}
+
+export async function proxyPostJson(req: Request, path: string): Promise<Response> {
+  const body = await req.json()
+  const url = `${API_BASE_URL}${path}`
+
+  try {
+    const upstream = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    const data = await upstream.json()
+    return Response.json(data, { status: upstream.status })
   } catch (err) {
     console.error(`[proxy:POST] ${path} 오류:`, err)
     return Response.json(
