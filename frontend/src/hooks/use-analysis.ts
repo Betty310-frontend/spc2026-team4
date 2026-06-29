@@ -1,7 +1,12 @@
 'use client'
 
 import { useState, useCallback, useRef, useEffect } from 'react'
-import { useAnalysisResult, abortMapUpdate } from '@/store/analysisResult'
+import {
+  useAnalysisResult,
+  abortMapUpdate,
+  completeMapUpdate,
+  getCurrentMapToken,
+} from '@/store/analysisResult'
 import {
   fetchCompetitors,
   fetchPopulation,
@@ -46,6 +51,7 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
     updateMetric('competitors', { status: 'loading' })
     updateMetric('population',  { status: 'loading' })
     updateMetric('density',     { status: 'loading' })
+    const mapToken = getCurrentMapToken()
 
     try {
       // Step 1: 경쟁업체 조회 (center 좌표 확보)
@@ -58,6 +64,7 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
       })
 
       applyCompetitors(normalizeCompetitors(comp))
+      completeMapUpdate(mapToken)
 
       // Step 2: density + population 병렬 조회
       const [density, pop] = await Promise.allSettled([

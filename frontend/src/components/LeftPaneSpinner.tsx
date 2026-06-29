@@ -29,8 +29,17 @@ export function LeftPaneSpinner() {
     clearTimers()
 
     const active = mapSync.pending || chatLoading
+    const immediate = mapSync.reason === 'pin-move'
 
     if (active) {
+      if (immediate) {
+        showTimerRef.current = setTimeout(() => {
+          visibleSinceRef.current = Date.now()
+          setVisible(true)
+        }, 0)
+        return clearTimers
+      }
+
       if (!visible) {
         showTimerRef.current = setTimeout(() => {
           visibleSinceRef.current = Date.now()
@@ -55,7 +64,7 @@ export function LeftPaneSpinner() {
     }, remaining)
 
     return clearTimers
-  }, [mapSync.pending, chatLoading, visible])
+  }, [mapSync.pending, mapSync.reason, chatLoading, visible])
 
   if (!visible) return null
 

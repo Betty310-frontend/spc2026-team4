@@ -6,13 +6,14 @@ import { Circle, Map, useMap } from 'react-kakao-maps-sdk'
 import useKakaoLoader from '@/hooks/use-kakao-loader'
 import { useCompetitorClusterer } from '@/hooks/use-competitor-clusterer'
 import { useAnalysisContext } from '@/store/analysisContext'
+import { beginMapUpdate } from '@/store/analysisResult'
 import { reverseGeocode } from '@/lib/geocode'
-import { beginMapUpdate, completeMapUpdate, getCurrentMapToken } from '@/store/analysisResult'
 import { CandidatePin } from './CandidatePin'
 import { CompetitorMarker } from './CompetitorMarker'
 import { MapHints } from './MapHints'
 import { KakaoMapProps } from '@/types/map'
 import { CenterCoords, CompetitorItem } from '@/types/api'
+import type { AnalysisContext } from '@/types/analysis'
 import { CLUSTER_THRESHOLD, CLUSTER_MIN_LEVEL } from '@/constants/map'
 import { radiusToLevel } from '@/lib/radius-sync'
 import { INDIGO, MARKER_COLORS } from '@/styles/colors'
@@ -20,7 +21,7 @@ import { INDIGO, MARKER_COLORS } from '@/styles/colors'
 const SEOUL_CENTER = { lat: 37.5665, lng: 126.978 }
 const KOREA_LAT_RANGE = { min: 33, max: 39 }
 const KOREA_LNG_RANGE = { min: 124, max: 132 }
-const DRAG_END_DEBOUNCE_MS = 400
+const DRAG_END_DEBOUNCE_MS = 120
 
 function isWithinKoreaBounds(center: CenterCoords) {
   return (
@@ -57,6 +58,16 @@ function ClustererLayer({
   return null
 }
 
+function CompetitorMarkerLayer({ competitors }: { competitors: CompetitorItem[] }) {
+  return (
+    <>
+      {competitors.map((c) => (
+        <CompetitorMarker key={c.id} competitor={c} />
+      ))}
+    </>
+  )
+}
+
 export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
   const [sdkLoading] = useKakaoLoader()
   const { analysisContext, setAnalysisContext } = useAnalysisContext()
@@ -70,6 +81,10 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
   const dragEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const committedCenterRef = useRef<CenterCoords>(SEOUL_CENTER)
   const dragOriginRef = useRef<CenterCoords>(SEOUL_CENTER)
+  const dragOriginContextRef = useRef<Pick<
+    AnalysisContext,
+    'center' | 'location' | 'dongCode' | 'fullLocationName'
+  > | null>(null)
   const analysisContextRef = useRef(analysisContext)
   const currentCenter = analysisContext.center ?? options?.center ?? userLocation ?? SEOUL_CENTER
   const displayRadiusM = analysisContext.radius ?? options?.radius_m ?? 500
@@ -111,8 +126,11 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
       setPreviewCenter(null)
       setPendingCenter(null)
       setDragging(false)
+      if (dragOriginContextRef.current) {
+        setAnalysisContext(dragOriginContextRef.current)
+      }
     },
-    [syncOverlays],
+    [setAnalysisContext, syncOverlays],
   )
 
   useEffect(() => {
@@ -166,10 +184,12 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
     dragFrameRef.current = requestAnimationFrame(() => {
       dragFrameRef.current = null
       const latLng = marker.getPosition()
-      circleRef.current?.setPosition(latLng)
-      centerMarkerRef.current?.setPosition(latLng)
+      const nextCenter = { lat: latLng.getLat(), lng: latLng.getLng() }
+      setPreviewCenter(nextCenter)
+      setPendingCenter(nextCenter)
+      syncOverlays(nextCenter)
     })
-  }, [])
+  }, [syncOverlays])
 
   const handleMarkerCreate = useCallback(
     (marker: kakao.maps.Marker) => {
@@ -196,35 +216,18 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
 
     const origin = committedCenterRef.current
     dragOriginRef.current = origin
+    dragOriginContextRef.current = {
+      center: analysisContextRef.current.center,
+      location: analysisContextRef.current.location,
+      dongCode: analysisContextRef.current.dongCode,
+      fullLocationName: analysisContextRef.current.fullLocationName,
+    }
     setDragging(true)
     setPendingCenter(null)
+    setPreviewCenter(origin)
     syncOverlays(origin)
     marker.setPosition(toLatLng(origin))
   }, [syncOverlays])
-
-  const handleDragEnd = useCallback(
-    (marker: kakao.maps.Marker) => {
-      if (dragEndTimerRef.current != null) {
-        clearTimeout(dragEndTimerRef.current)
-      }
-
-      dragEndTimerRef.current = setTimeout(() => {
-        dragEndTimerRef.current = null
-        const center = getMarkerCenter(marker)
-        setDragging(false)
-
-        if (!isWithinKoreaBounds(center)) {
-          rollbackToCenter(dragOriginRef.current)
-          return
-        }
-
-        syncOverlays(center)
-        setPreviewCenter(center)
-        setPendingCenter(center)
-      }, DRAG_END_DEBOUNCE_MS)
-    },
-    [rollbackToCenter, syncOverlays],
-  )
 
   const commitCenterChange = useCallback(
     async (center: CenterCoords) => {
@@ -244,41 +247,62 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
       }
 
       try {
+        beginMapUpdate('pin-move')
+        setAnalysisContext({
+          center,
+          location: null,
+          dongCode: null,
+          fullLocationName: null,
+        })
+        committedCenterRef.current = center
+        setPreviewCenter(center)
+        syncOverlays(center)
+        setPendingCenter(center)
+
         const geoResult = await reverseGeocode(center.lat, center.lng)
 
         if (!geoResult) {
           throw new Error('핀 위치의 지역 정보를 확인할 수 없습니다.')
         }
 
-        const nextToken = getCurrentMapToken() + 1
-        beginMapUpdate('pin-move')
         setAnalysisContext({
           center,
           location: geoResult.dongName,
           dongCode: geoResult.dongCode,
           fullLocationName: geoResult.fullName,
         })
-
-        committedCenterRef.current = center
-        setPendingCenter(null)
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            setPreviewCenter(null)
-            completeMapUpdate(nextToken)
-          })
-        })
       } catch (error) {
         console.error('[map:pin-move] 지역 재확인 실패', error)
         rollbackToCenter(origin)
       }
     },
-    [rollbackToCenter, setAnalysisContext],
+    [rollbackToCenter, setAnalysisContext, syncOverlays],
   )
 
-  const handleConfirmCenterChange = useCallback(() => {
-    if (!pendingCenter) return
-    void commitCenterChange(pendingCenter)
-  }, [commitCenterChange, pendingCenter])
+  const handleDragEnd = useCallback(
+    (marker: kakao.maps.Marker) => {
+      if (dragEndTimerRef.current != null) {
+        clearTimeout(dragEndTimerRef.current)
+      }
+
+      dragEndTimerRef.current = setTimeout(() => {
+        dragEndTimerRef.current = null
+        const center = getMarkerCenter(marker)
+        setDragging(false)
+
+        if (!isWithinKoreaBounds(center)) {
+          rollbackToCenter(dragOriginRef.current)
+          return
+        }
+
+        setPendingCenter(center)
+        setPreviewCenter(center)
+        syncOverlays(center)
+        void commitCenterChange(center)
+      }, DRAG_END_DEBOUNCE_MS)
+    },
+    [commitCenterChange, rollbackToCenter, syncOverlays],
+  )
 
   const handleCancelCenterChange = useCallback(() => {
     rollbackToCenter(dragOriginRef.current)
@@ -310,6 +334,7 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
             <CandidatePin
               position={visibleCenter}
               draggable
+              isDragging={dragging}
               onCreate={handleMarkerCreate}
               onDragStart={handleDragStart}
               onDragEnd={handleDragEnd}
@@ -322,7 +347,10 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
                 false → 내부에서 즉시 cleanup (마커·클러스터러 제거)
             */}
             {needsCluster && (
-              <ClustererLayer competitors={options.competitors} clusterMode={clusterMode} />
+              <ClustererLayer
+                competitors={options.competitors}
+                clusterMode={clusterMode}
+              />
             )}
 
             {/*
@@ -332,8 +360,9 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
                 50개 이상, 줌인(레벨 ≤4): clusterMode=false → 표시
                 50개 이상, 줌아웃(레벨 >4): clusterMode=true → 렌더링 안 함
             */}
-            {individualMode &&
-              options.competitors.map((c) => <CompetitorMarker key={c.id} competitor={c} />)}
+            {individualMode && (
+              <CompetitorMarkerLayer competitors={options.competitors} />
+            )}
           </>
         )}
       </Map>
@@ -341,7 +370,6 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
       <MapHints
         dragging={dragging}
         pending={pendingCenter != null}
-        onConfirm={handleConfirmCenterChange}
         onCancel={handleCancelCenterChange}
       />
 

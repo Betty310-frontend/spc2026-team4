@@ -6,7 +6,7 @@ import { BORDER_SUBTLE, INDIGO, SURFACE_MUTED, TEXT_SECONDARY, WHITE, YELLOW } f
 interface MapHintsProps {
   dragging: boolean
   pending: boolean
-  onConfirm: () => void
+  onConfirm?: () => void
   onCancel: () => void
 }
 
@@ -42,7 +42,7 @@ export function MapHints({ dragging, pending, onConfirm, onCancel }: MapHintsPro
           <Sparkles className="h-4 w-4 flex-shrink-0" style={{ color: INDIGO[600] }} />
           <div className="min-w-0">
             <p className="text-[11px] font-semibold" style={{ color: INDIGO[900] }}>
-              여기로 분석할까요?
+              새 위치를 반영하는 중…
             </p>
             <p className="text-[10px]" style={{ color: TEXT_SECONDARY }}>
               핀을 옮긴 위치로 지도와 결과를 다시 맞춥니다.
@@ -58,22 +58,24 @@ export function MapHints({ dragging, pending, onConfirm, onCancel }: MapHintsPro
                 background: SURFACE_MUTED,
                 color: TEXT_SECONDARY,
               }}
-            >
-              <RotateCcw className="h-3 w-3" />
-              취소
-            </button>
-            <button
-              type="button"
-              onClick={onConfirm}
-              className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors"
-              style={{
-                background: INDIGO[600],
-                color: WHITE,
-              }}
-            >
-              <Sparkles className="h-3 w-3" />
-              예
-            </button>
+              >
+                <RotateCcw className="h-3 w-3" />
+                취소
+              </button>
+            {onConfirm && (
+              <button
+                type="button"
+                onClick={onConfirm}
+                className="inline-flex items-center gap-1 rounded-md px-2 py-1 text-[10px] font-medium transition-colors"
+                style={{
+                  background: INDIGO[600],
+                  color: WHITE,
+                }}
+              >
+                <Sparkles className="h-3 w-3" />
+                예
+              </button>
+            )}
           </div>
         </div>
       )}

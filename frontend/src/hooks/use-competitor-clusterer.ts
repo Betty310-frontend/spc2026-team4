@@ -67,17 +67,28 @@ export function useCompetitorClusterer(
   map: kakao.maps.Map | null,
   competitors: CompetitorItem[],
   enabled: boolean,
+  onRendered?: () => void,
 ) {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const clustererRef = useRef<any>(null)
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const markersRef = useRef<any[]>([])
+  const renderFrameRef = useRef<number | null>(null)
+  const renderTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   useEffect(() => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const kakaoMaps = (window as any).kakao?.maps
 
     if (!map || !enabled) {
+      if (renderFrameRef.current != null) {
+        cancelAnimationFrame(renderFrameRef.current)
+        renderFrameRef.current = null
+      }
+      if (renderTimeoutRef.current != null) {
+        clearTimeout(renderTimeoutRef.current)
+        renderTimeoutRef.current = null
+      }
       // 비활성화 시 클러스터러·마커 즉시 정리
       if (clustererRef.current) {
         clustererRef.current.clear()
@@ -90,6 +101,15 @@ export function useCompetitorClusterer(
     }
 
     if (!kakaoMaps?.MarkerClusterer) return
+
+    if (renderFrameRef.current != null) {
+      cancelAnimationFrame(renderFrameRef.current)
+      renderFrameRef.current = null
+    }
+    if (renderTimeoutRef.current != null) {
+      clearTimeout(renderTimeoutRef.current)
+      renderTimeoutRef.current = null
+    }
 
     // 이전 클러스터러 정리
     if (clustererRef.current) {
@@ -126,6 +146,16 @@ export function useCompetitorClusterer(
 
     clustererRef.current.addMarkers(markers)
 
+    renderFrameRef.current = requestAnimationFrame(() => {
+      renderFrameRef.current = requestAnimationFrame(() => {
+        renderTimeoutRef.current = setTimeout(() => {
+          renderTimeoutRef.current = null
+          renderFrameRef.current = null
+          onRendered?.()
+        }, 0)
+      })
+    })
+
     // 클러스터 클릭 시 줌인 — SDK가 자동 처리하지 않으므로 직접 등록
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const handleClusterClick = (cluster: any) => {
@@ -155,8 +185,16 @@ export function useCompetitorClusterer(
         clustererRef.current.setMap(null)
         clustererRef.current = null
       }
+      if (renderFrameRef.current != null) {
+        cancelAnimationFrame(renderFrameRef.current)
+        renderFrameRef.current = null
+      }
+      if (renderTimeoutRef.current != null) {
+        clearTimeout(renderTimeoutRef.current)
+        renderTimeoutRef.current = null
+      }
       markersRef.current.forEach((m) => m.setMap(null))
       markersRef.current = []
     }
-  }, [map, competitors, enabled])
+  }, [map, competitors, enabled, onRendered])
 }
