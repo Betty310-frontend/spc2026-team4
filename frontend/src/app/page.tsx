@@ -9,7 +9,7 @@ import { KakaoMap } from '@/components/map/KakaoMap'
 
 export default function Home() {
   // mapOptions는 useAnalysis → setMapOptions → 스토어에서 공유
-  const { mapOptions } = useAnalysisResult()
+  const { mapOptions, isLoading } = useAnalysisResult()
   const { analysisContext } = useAnalysisContext()
 
   return (
@@ -19,6 +19,7 @@ export default function Home() {
           <KakaoMap
             options={mapOptions}
             userLocation={analysisContext.userLocation}
+            isLoading={isLoading}
           />
           <MetricCards />
         </LeftPanel>

@@ -160,3 +160,25 @@ export async function proxyPostStream(req: Request, path: string): Promise<Respo
     )
   }
 }
+
+export async function proxyPostJson(req: Request, path: string): Promise<Response> {
+  const body = await req.json()
+  const url = `${API_BASE_URL}${path}`
+
+  try {
+    const upstream = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    })
+
+    const data = await upstream.json()
+    return Response.json(data, { status: upstream.status })
+  } catch (err) {
+    console.error(`[proxy:POST] ${path} 오류:`, err)
+    return Response.json(
+      { error: 'FastAPI 서버에 연결할 수 없습니다.' },
+      { status: 503 },
+    )
+  }
+}

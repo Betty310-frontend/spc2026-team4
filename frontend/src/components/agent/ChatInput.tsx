@@ -37,6 +37,7 @@ export function ChatInput({ value, onChange, onSend, disabled, placeholder }: Ch
         )}
       />
       <Button
+        type="button"
         size="icon-sm"
         onClick={onSend}
         disabled={disabled || !value.trim()}

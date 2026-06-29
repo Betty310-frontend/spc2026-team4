@@ -1,11 +1,9 @@
 'use client'
 
-import { useState, useCallback, useRef, useEffect } from 'react'
+import { useCallback, useRef, useEffect } from 'react'
 import {
   useAnalysisResult,
   abortMapUpdate,
-  completeMapUpdate,
-  getCurrentMapToken,
 } from '@/store/analysisResult'
 import {
   fetchCompetitors,
@@ -13,6 +11,7 @@ import {
   fetchCompetitionPercentile,
 } from '@/lib/api-client'
 import { applyCompetitors, normalizeCompetitors } from '@/lib/agent-event-bridge'
+import { isValidCategory } from '@/lib/category'
 import { getApiErrorMessage } from '@/constants/error-messages'
 import type { AgentMessage } from '@/types/message'
 
@@ -35,8 +34,8 @@ function formatNumber(value: number | null | undefined): string {
 }
 
 export function useAnalysis(options: UseAnalysisOptions = {}) {
-  const { updateMetric, setMapOptions } = useAnalysisResult()
-  const [isLoading, setIsLoading] = useState(false)
+  const { updateMetric, setMapOptions, startLoading, stopLoading, isLoading } =
+    useAnalysisResult()
   const lastParamsRef = useRef<AnalysisParams | null>(null)
 
   // options를 ref로 캡처해 useCallback 의존성 안정화
@@ -46,13 +45,17 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
   }, [options.onAgentMessage])
 
   const runAnalysis = useCallback(async (params: AnalysisParams) => {
-    setIsLoading(true)
     lastParamsRef.current = params
+
+    if (!isValidCategory(params.업종)) {
+      return
+    }
+
     updateMetric('competitors', { status: 'loading' })
     updateMetric('population',  { status: 'loading' })
     updateMetric('density',     { status: 'loading' })
-    const mapToken = getCurrentMapToken()
 
+    startLoading('analysis')
     try {
       // Step 1: 경쟁업체 조회 (center 좌표 확보)
       const comp = await fetchCompetitors({
@@ -64,7 +67,6 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
       })
 
       applyCompetitors(normalizeCompetitors(comp))
-      completeMapUpdate(mapToken)
 
       // Step 2: density + population 병렬 조회
       const [density, pop] = await Promise.allSettled([
@@ -145,9 +147,9 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
         isError: true,
       })
     } finally {
-      setIsLoading(false)
+      stopLoading('analysis')
     }
-  }, [updateMetric])
+  }, [startLoading, stopLoading, updateMetric])
 
   const retry = useCallback(() => {
     if (lastParamsRef.current) runAnalysis(lastParamsRef.current)

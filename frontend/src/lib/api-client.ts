@@ -1,4 +1,6 @@
 import { withRetry, ApiError } from '@/lib/retry'
+import { startLoading, stopLoading, type LoadingKey } from '@/store/analysisResult'
+import { isValidCategory } from '@/lib/category'
 import type {
   CompetitorsResponse,
   PopulationResponse,
@@ -17,6 +19,15 @@ async function apiFetch<T>(url: string): Promise<T> {
   })
 }
 
+async function withLoading<T>(key: LoadingKey, task: () => Promise<T>): Promise<T> {
+  startLoading(key)
+  try {
+    return await task()
+  } finally {
+    stopLoading(key)
+  }
+}
+
 export async function fetchCompetitors(params: {
   위치: string
   업종: string
@@ -30,7 +41,7 @@ export async function fetchCompetitors(params: {
   if (params.반경 != null) query.set('반경', String(params.반경))
   if (params.lat   != null) query.set('lat',   String(params.lat))
   if (params.lng   != null) query.set('lng',   String(params.lng))
-  return apiFetch(`/api/v1/competitors?${query}`)
+  return withLoading('competitors', () => apiFetch(`/api/v1/competitors?${query}`))
 }
 
 export async function fetchPopulation(params: {
@@ -42,7 +53,7 @@ export async function fetchPopulation(params: {
   query.set('행정동코드', params.행정동코드)
   query.set('업종', params.업종)
   params.시간대?.forEach((t) => query.append('시간대', t))
-  return apiFetch(`/api/v1/population?${query}`)
+  return withLoading('population', () => apiFetch(`/api/v1/population?${query}`))
 }
 
 export async function fetchCompetitionPercentile(params: {
@@ -56,7 +67,9 @@ export async function fetchCompetitionPercentile(params: {
   query.set('lng',  String(params.lng))
   query.set('업종', params.업종)
   if (params.반경 != null) query.set('반경', String(params.반경))
-  return apiFetch(`/api/v1/competition-percentile?${query}`)
+  return withLoading('competition-percentile', () =>
+    apiFetch(`/api/v1/competition-percentile?${query}`),
+  )
 }
 
 export async function fetchH3Hexagons(params: {
@@ -65,12 +78,13 @@ export async function fetchH3Hexagons(params: {
   radius?: number
   resolution?: number
 }): Promise<H3HexagonItem[]> {
+  if (!isValidCategory(params.category)) return []
   const query = new URLSearchParams()
   query.set('station',  params.station)
   query.set('category', params.category)
   if (params.radius     != null) query.set('radius',     String(params.radius))
   if (params.resolution != null) query.set('resolution', String(params.resolution))
-  return apiFetch(`/api/v1/h3-hexagons?${query}`)
+  return withLoading('h3-hexagons', () => apiFetch(`/api/v1/h3-hexagons?${query}`))
 }
 
 export async function fetchHealth(): Promise<boolean> {

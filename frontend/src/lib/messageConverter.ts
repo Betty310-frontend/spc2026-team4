@@ -19,6 +19,10 @@ export function convertToChatMessages(sdkMessages: UIMessage[]): ChatMessage[] {
       let textPartCount = 0
 
       for (const part of msg.parts) {
+        if (!part || typeof part !== 'object' || !('type' in part)) {
+          continue
+        }
+
         if (part.type === 'text' && 'text' in part) {
           textAccum += (part as { text: string }).text
         }

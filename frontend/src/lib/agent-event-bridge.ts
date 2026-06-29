@@ -138,6 +138,8 @@ export function applyAgentEventToStore(evt: AgentEvent): void {
 
 export function extractCompetitorsFromMessage(message: UIMessage): NormalizedCompetitors | null {
   for (const part of message.parts) {
+    if (!part || typeof part !== 'object' || !('type' in part)) continue
+
     if (part.type === 'dynamic-tool') {
       if (part.toolName !== 'search_competitors' || part.state !== 'output-available') continue
       if (!isRecord(part.output)) continue

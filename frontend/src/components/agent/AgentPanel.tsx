@@ -14,6 +14,7 @@ import type { AgentMessage } from '@/types/message'
 import { INITIAL_MESSAGE } from '@/constants/messages'
 import { reverseGeocode } from '@/lib/geocode'
 import { beginMapUpdate } from '@/store/analysisResult'
+import { isValidCategory } from '@/lib/category'
 
 export function AgentPanel() {
   const { status: geoStatus, requestLocation } = useGeolocation()
@@ -50,30 +51,46 @@ export function AgentPanel() {
   const prevRadiusRef = useRef<number | null>(analysisContext.radius)
   const prevLocationRef = useRef<string | null>(analysisContext.location)
   const prevCenterRef = useRef<{ lat: number; lng: number } | null>(analysisContext.center)
+  const lastAnalysisSignatureRef = useRef<string | null>(null)
   const centerLat = analysisContext.center?.lat ?? null
   const centerLng = analysisContext.center?.lng ?? null
+
+  const analysisSignature = useMemo(() => {
+    const industry = analysisContext.industry ?? ''
+    const radius = analysisContext.radius ?? ''
+
+    if (centerLat != null && centerLng != null) {
+      return `${industry}|${radius}|center:${centerLat.toFixed(6)},${centerLng.toFixed(6)}`
+    }
+
+    return `${industry}|${radius}|location:${analysisContext.location ?? ''}`
+  }, [analysisContext.industry, analysisContext.location, analysisContext.radius, centerLat, centerLng])
 
   // 에이전트가 업종·위치 컨텍스트를 파싱하면 자동으로 데이터 조회 시작
   // 핀 이동으로 location이 바뀌거나, 같은 location 안에서 center가 바뀌면 재분석한다.
   useEffect(() => {
-    if (analysisContext.industry && analysisContext.location) {
-      runAnalysis({
-        위치: analysisContext.location,
-        업종: analysisContext.industry,
-        반경: analysisContext.radius ?? undefined,
-        lat: centerLat ?? undefined,
-        lng: centerLng ?? undefined,
-        행정동코드: analysisContext.dongCode ?? undefined,
-      })
-    }
-  // eslint-disable-next-line react-hooks/exhaustive-deps
+    const industry = analysisContext.industry
+    if (!isValidCategory(industry) || !analysisContext.location) return
+    if (lastAnalysisSignatureRef.current === analysisSignature) return
+
+    lastAnalysisSignatureRef.current = analysisSignature
+    runAnalysis({
+      위치: analysisContext.location,
+      업종: industry,
+      반경: analysisContext.radius ?? undefined,
+      lat: centerLat ?? undefined,
+      lng: centerLng ?? undefined,
+      행정동코드: analysisContext.dongCode ?? undefined,
+    })
   }, [
+    analysisSignature,
     analysisContext.industry,
     analysisContext.location,
     analysisContext.radius,
+    analysisContext.dongCode,
     centerLat,
     centerLng,
-    analysisContext.dongCode,
+    runAnalysis,
   ])
 
   useEffect(() => {
@@ -122,7 +139,7 @@ export function AgentPanel() {
     if (!input.trim() || isLoading) return
     setShowQuickStart(false)
     setLocalMessages([])
-    append(input)
+    void append(input)
   }
 
   const handleQuickStart = (text: string) => {
@@ -130,7 +147,7 @@ export function AgentPanel() {
     setLocalMessages([])
     startNewAnalysis()
     setInitMessage({ ...INITIAL_MESSAGE, isError: false })
-    append(text)
+    void append(text)
   }
 
   const handleConfirmAction = useCallback(
@@ -178,15 +195,15 @@ export function AgentPanel() {
                 dongCode: geoResult.dongCode,
                 fullLocationName: geoResult.fullName,
               })
-              append(`현재 위치(${geoResult.fullName})에서 창업을 준비 중이에요.`)
+              void append(`현재 위치(${geoResult.fullName})에서 창업을 준비 중이에요.`)
             } else {
               // 역지오코딩 실패 → 좌표 텍스트 fallback
-              append(
+              void append(
                 `현재 위치(좌표: ${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)})에서 창업을 준비 중이에요.`,
               )
             }
           } else {
-            append('위치 권한을 허용하지 않았어요.')
+            void append('위치 권한을 허용하지 않았어요.')
           }
 
           setShowQuickStart(true)
@@ -214,7 +231,7 @@ export function AgentPanel() {
             setAnalysisContext({ radius: 500 })
           }
 
-          append(actionTextMap[action] ?? action)
+          void append(actionTextMap[action] ?? action)
           break
         }
       }
