@@ -3,6 +3,8 @@ from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_redis_client
+from app.core.category_map import get_category_filter
+from app.core.geo import resolve_coords
 from app.dto.analysis import (
     CenterCoords,
     CompetitionPercentileResponse,
@@ -16,12 +18,12 @@ from app.services.analysis import (
     run_competition_percentile,
     run_get_population_by_dong,
     run_h3_hexagons,
-    run_market_analysis,
 )
+from app.services.store import search_competitors
 
 router = APIRouter()
 
-_SOSANG_BASE_DATE = '2026-03'  # 상가업소정보 202603 파일 기준
+_SOSANG_BASE_DATE = '2026-03'
 
 
 @router.get('/competitors')
@@ -34,19 +36,31 @@ async def get_competitors(
     db: AsyncSession = Depends(get_async_db),
     redis: Redis = Depends(get_redis_client),
 ) -> CompetitorsResponse:
-    result = await run_market_analysis(
-        db, redis, location, category, radius, lat=lat, lng=lng
+    cat_filter = get_category_filter(category)
+
+    if lat is not None and lng is not None:
+        coords = {'lat': lat, 'lng': lng}
+    else:
+        coords = resolve_coords(location)
+
+    competitors = await search_competitors(
+        db,
+        coords['lat'],
+        coords['lng'],
+        radius,
+        cat_filter,
     )
-    competitors = result['competitors']
+
     same = [c for c in competitors if c.get('type') == 'same']
     similar = [c for c in competitors if c.get('type') == 'similar']
+
     return CompetitorsResponse(
         total=len(competitors),
         same_type=len(same),
         similar_type=len(similar),
         data_source='소상공인시장진흥공단',
         base_date=_SOSANG_BASE_DATE,
-        center=CenterCoords(**result['coords']),
+        center=CenterCoords(**coords),
         radius_m=radius,
         fallback=False,
         data=[CompetitorItem(**c) for c in competitors],

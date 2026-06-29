@@ -6,7 +6,7 @@ from app.entities.base import Base
 
 
 class Store(Base):
-    __tablename__ = 'geo_store_selected15'
+    __tablename__ = 'geo_store'
 
     id: Mapped[str] = mapped_column('id', String(30), primary_key=True)
     name: Mapped[str | None] = mapped_column('name', Text)
@@ -41,7 +41,7 @@ class Store(Base):
     )
 
     __table_args__ = (
-        Index('idx_geo_store_selected15_location', 'location', postgresql_using='gist'),
-        Index('idx_geo_store_selected15_small_code', 'category_small_code'),
-        Index('idx_geo_store_selected15_dong_code', 'dong_code'),
+        Index('idx_geo_store_location', 'location', postgresql_using='gist'),
+        Index('idx_geo_store_small_code', 'category_small_code'),
+        Index('idx_geo_store_dong_code', 'dong_code'),
     )

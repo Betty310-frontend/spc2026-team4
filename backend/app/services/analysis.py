@@ -14,7 +14,6 @@ from app.core.cache import cache_or_compute
 from app.core.cache_keys import (
     competition_key,
     h3_hexagons_key,
-    market_key,
     population_dong_key,
     population_key,
 )
@@ -132,7 +131,7 @@ async def run_market_analysis(
             station, get_settings().kakao_rest_api_key, redis
         )
     geohash_str = encode_geohash(coords['lat'], coords['lng'], precision=7)
-    cache_key = market_key(cache_category, geohash_str, radius)
+    cache_key = f'market:v3:{cache_category}:{geohash_str}:{radius}'
 
     async def _compute() -> dict:
         dong_codes, primary_dong_name = await get_dong_codes_in_radius(
