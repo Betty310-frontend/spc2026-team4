@@ -162,7 +162,7 @@ async def run_market_analysis(
             station, get_settings().kakao_rest_api_key, redis
         )
     geohash_str = encode_geohash(coords['lat'], coords['lng'], precision=7)
-    cache_key = f'market:v2:{cache_category}:{geohash_str}:{radius}'
+    cache_key = f'market:v3:{cache_category}:{geohash_str}:{radius}'
 
     cached = await redis.get(cache_key)
     if cached:

@@ -5,7 +5,7 @@ from geoalchemy2.types import Geography
 from sqlalchemy import ColumnElement, cast, func, select, true
 from sqlalchemy.ext.asyncio import AsyncSession
 
-from app.core.category_map import CategoryFilter
+from app.core.category_map import CategoryFilter, get_category_filter, get_similar_business_tags
 from app.entities.store import Store
 
 
@@ -21,7 +21,33 @@ async def search_competitors(
     point = WKTElement(f'POINT({lng} {lat})', srid=4326)
 
     cat_cond: ColumnElement[bool]
-    if category_filter and category_filter.small_codes:
+    same_display_name = category_filter.display_name if category_filter else ''
+
+    if category_filter and category_filter.display_name:
+        similar_names = get_similar_business_tags(category_filter.display_name)
+        similar_filters = [get_category_filter(name) for name in similar_names]
+
+        small_codes = tuple(
+            code
+            for item in similar_filters
+            if item
+            for code in item.small_codes
+        )
+
+        print("same_display_name =", same_display_name)
+        print("similar_names =", similar_names)
+        print("small_codes =", small_codes)
+
+        if small_codes:
+            cat_cond = Store.category_small_code.in_(small_codes)
+        elif category_filter.small_codes:
+            cat_cond = Store.category_small_code.in_(category_filter.small_codes)
+        elif category_filter.large_code:
+            cat_cond = Store.category_large_code == category_filter.large_code
+        else:
+            cat_cond = true()
+
+    elif category_filter and category_filter.small_codes:
         cat_cond = Store.category_small_code.in_(category_filter.small_codes)
     elif category_filter and category_filter.large_code:
         cat_cond = Store.category_large_code == category_filter.large_code
@@ -32,7 +58,7 @@ async def search_competitors(
         select(
             Store.id,
             Store.name,
-            Store.display_name,          # 변경
+            Store.display_name,
             Store.address,
             func.ST_Y(Store.location).label('lat'),
             func.ST_X(Store.location).label('lng'),
@@ -56,8 +82,8 @@ async def search_competitors(
             'name': row.name,
             'lat': float(row.lat),
             'lng': float(row.lng),
-            'type': 'same',
-            'category': row.display_name,   # 변경
+            'type': 'same' if row.display_name == same_display_name else 'similar',
+            'category': row.display_name,
             'address': row.address,
         }
         for row in rows

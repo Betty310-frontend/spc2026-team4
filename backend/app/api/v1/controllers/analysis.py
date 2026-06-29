@@ -20,8 +20,7 @@ from app.dto.analysis import (
 )
 from app.services.analysis import (
     run_competition_percentile,
-    run_get_population_by_dong,
-    run_market_analysis,
+    run_get_population_by_dong
 )
 from app.services.store import search_competitors
 
@@ -40,19 +39,31 @@ async def get_competitors(
     db: AsyncSession = Depends(get_async_db),
     redis: Redis = Depends(get_redis_client),
 ) -> CompetitorsResponse:
-    result = await run_market_analysis(
-        db, redis, location, category, radius, lat=lat, lng=lng
+    cat_filter = get_category_filter(category)
+
+    if lat is not None and lng is not None:
+        coords = {'lat': lat, 'lng': lng}
+    else:
+        coords = resolve_coords(location)
+
+    competitors = await search_competitors(
+        db,
+        coords['lat'],
+        coords['lng'],
+        radius,
+        cat_filter,
     )
-    competitors = result['competitors']
+
     same = [c for c in competitors if c.get('type') == 'same']
     similar = [c for c in competitors if c.get('type') == 'similar']
+
     return CompetitorsResponse(
         total=len(competitors),
         same_type=len(same),
         similar_type=len(similar),
         data_source='소상공인시장진흥공단',
         base_date='2026-03',
-        center=CenterCoords(**result['coords']),
+        center=CenterCoords(**coords),
         radius_m=radius,
         fallback=False,
         data=[CompetitorItem(**c) for c in competitors],
