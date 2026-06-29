@@ -26,7 +26,6 @@ venv/
 
 # Data (raw/대용량 파일)
 *.csv
-!static_data/*.csv
 
 # docker volumes
 db_data/

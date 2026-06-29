@@ -29,6 +29,8 @@ class Settings(BaseSettings):
 
     kakao_rest_api_key: str = ''
 
+    cors_origins: list[str] = ['*']
+
 
 @lru_cache
 def get_settings() -> Settings:

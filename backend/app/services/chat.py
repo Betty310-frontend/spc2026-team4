@@ -1,4 +1,5 @@
 """AI 에이전트 채팅 서비스 — LangGraph ReAct 에이전트 + MemorySaver."""
+
 # mypy: ignore-errors
 import asyncio
 import json
@@ -6,7 +7,7 @@ import uuid
 from collections.abc import AsyncGenerator
 
 from langchain.agents import create_agent
-from langchain_core.messages import AIMessage, HumanMessage, SystemMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage, SystemMessage
 from langchain_core.runnables import RunnableConfig
 from langgraph.checkpoint.memory import MemorySaver
 from redis.asyncio import Redis
@@ -75,7 +76,8 @@ _SYSTEM = """
   커피숍·커피·카페테리아 → 카페 / 헤어샵·헤어·미용·이용원 → 미용실 / 식당·밥집 → 음식점
   분식집·떡볶이 → 분식 / 치킨집·후라이드치킨 → 치킨 / 술집·호프·바 → 주점
   베이커리·빵집 → 제과점 / 병원·내과·소아과·피부과 → 의원
-- 위치 제한: 서울지역이 아니면 "서울 지역만 분석 가능"이라고 안내하고 도구 호출 없이 답할것.
+- 위치 제한: 부산·대구·인천·광주·대전·울산·세종 등 서울특별시 외 타 시·도가 명확한 경우에만 "서울 지역만 분석 가능"이라고 안내하고 도구 호출 없이 답해라. 여의도·신당동·홍대·이태원·잠실 등 서울 내 동네명·역명·구명은 반드시 서울 지역으로 간주하고 정상 처리해라. 위치가 서울인지 불분명하면 서울로 간주하고 처리해라.
+- 업종 누락: 위치는 파악됐으나 업종을 알 수 없으면 도구를 호출하지 말고 "어떤 업종을 생각하고 계신가요? (예: 카페, 음식점, 미용실 등)"라고 되물어라. 업종이 확인된 뒤에 search_competitors를 호출해라.
 
 [첫 분석 응답 형식 — search_competitors 결과 수신 시 반드시 아래 항목을 모두 포함해라]
 1. 행정동: dong_name 필드가 있으면 "해당 위치는 {dong_name}에 속합니다"로 시작.
@@ -95,6 +97,8 @@ _SYSTEM = """
    - population_by_age_ratio → 각 연령대 비율(%), 상위 2~3개 언급.
    - top_population_age → 유동인구 주요 연령대
 5. 데이터가 null인 항목은 언급하지 마라.
+6. 첫 분석 응답 마지막에 반드시 아래 문장을 그대로 포함해라:
+   "이 서비스는 창업 리스크 해석을 위한 참고 자료를 제공합니다. 성공을 보장하지 않으며, 재무·법률 조언이 아닙니다. 분석 결과는 공공 데이터 기준이며 실제와 다를 수 있습니다."
 
 [고유명사 비식별화 규칙]
 - 도구가 반환한 top_competitors의 경쟁업체는 반드시 display_name만 사용해라. analysis_name은 절대 응답에 포함하지 마라.
@@ -111,6 +115,7 @@ _SYSTEM = """
 - 도구 결과 데이터와 RAG 참고 문서만 근거로 삼아라. 데이터 외 추정은 "데이터가 없어 확인할 수 없습니다"로 답해라.
 - 성공 가능성·매출 예측·폐업 확률·보장 같은 단정적 표현은 절대 금지.
 - 대화 맥락을 유지하며 연속된 상담처럼 응답해라.
+- 이 서비스는 창업 리스크 해석을 위한 참고 자료를 제공합니다. 성공을 보장하지 않으며, 재무·법률 조언이 아닙니다. 분석 결과는 공공 데이터 기준이며 실제와 다를 수 있습니다.
 """
 
 _checkpointer = MemorySaver()
@@ -207,6 +212,7 @@ def _get_last_user_message(messages: list[UIMessage]) -> UIMessage:
 def _get_message_text(message: UIMessage) -> str:
     return next((p.text for p in message.parts if p.type == 'text'), message.content)
 
+
 def _infer_category_from_text(text: str) -> str:
     aliases = {
         '카페': ['카페', '커피', '커피숍'],
@@ -228,13 +234,14 @@ def _infer_category_from_text(text: str) -> str:
 
     return ''
 
+
 def _format_rag_context(rag_sources: list[dict]) -> str:
     return '\n\n'.join(
         (
-            f"[근거 {idx + 1}]\n"
-            f"문서: {source.get('document_title')}\n"
-            f"섹션: {source.get('section_title')}\n"
-            f"내용:\n{source.get('chunk_text')}"
+            f'[근거 {idx + 1}]\n'
+            f'문서: {source.get("document_title")}\n'
+            f'섹션: {source.get("section_title")}\n'
+            f'내용:\n{source.get("chunk_text")}'
         )
         for idx, source in enumerate(rag_sources)
     )
@@ -257,7 +264,7 @@ def _build_rag_prompt(current_category: str, rag_context: str) -> str:
 """.strip()
 
 
-def _build_rag_message(
+async def _build_rag_message(
     current_category: str,
     question: str,
 ) -> tuple[SystemMessage | None, list[dict]]:
@@ -265,10 +272,11 @@ def _build_rag_message(
         return None, []
 
     try:
-        rag_sources = search_rag_chunks(
-            display_name=current_category,
-            question=question,
-            n_results=5,
+        rag_sources = await asyncio.to_thread(
+            search_rag_chunks,
+            current_category,
+            question,
+            5,
         )
     except Exception as e:
         print(f'[RAG] 검색 실패: {e}')
@@ -338,7 +346,7 @@ async def stream_ui(
 
         rag_category = current_category or _infer_category_from_text(last_user_text)
 
-        rag_message, rag_sources = _build_rag_message(
+        rag_message, rag_sources = await _build_rag_message(
             current_category=rag_category,
             question=last_user_text,
         )

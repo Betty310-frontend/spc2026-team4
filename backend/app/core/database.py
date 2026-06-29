@@ -43,16 +43,16 @@ async def init_engine() -> None:
     global _engine, _async_session_factory
     settings = get_settings()
 
-    engine = await _try_engine(settings.pg_local_url)
-    if engine:
-        print(f'[DB] 로컬 연결 성공: {settings.pg_local_url}')
-        _engine = engine
-        _async_session_factory = async_sessionmaker(
-            bind=_engine, class_=AsyncSession, expire_on_commit=False
-        )
-        return
-
-    print(f'[DB] 로컬 연결 실패: {settings.pg_local_url}')
+    if settings.pg_local_url:
+        engine = await _try_engine(settings.pg_local_url)
+        if engine:
+            print(f'[DB] 로컬 연결 성공: {settings.pg_local_url}')
+            _engine = engine
+            _async_session_factory = async_sessionmaker(
+                bind=_engine, class_=AsyncSession, expire_on_commit=False
+            )
+            return
+        print(f'[DB] 로컬 연결 실패: {settings.pg_local_url}')
 
     if not settings.pg_cloud_url:
         raise RuntimeError(
