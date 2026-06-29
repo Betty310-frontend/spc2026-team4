@@ -107,11 +107,12 @@ async def search_competitors(
         if same_display_name
         else ()
     )
-    similar_filters = [
-        item
-        for name in similar_names
-        if (item := get_category_filter(name)) is not None
-    ]
+    similar_filters: list[CategoryFilter] = []
+
+    for name in similar_names:
+        similar_filter = get_category_filter(name)
+        if similar_filter is not None:
+            similar_filters.append(similar_filter)
     small_codes = {
         code
         for item in similar_filters
