@@ -279,15 +279,15 @@ async def seed_local_people_from_csv(csv_paths: list[Path]) -> None:
 
 
 INSERT_SQL = """
-INSERT INTO geo_store (
-    id, name, branch,
-    category_large_code, category_large_name,
-    category_mid_code,   category_mid_name,
-    category_small_code, category_small_name,
-    gu_code, gu_name,
+INSERT INTO raw_sosang (
+    store_id, store_name, branch_name,
+    major_code, major_name,
+    middle_code, middle_name,
+    minor_code, minor_name,
+    sigungu_code, sigungu_name,
     dong_code, dong_name,
     address, postal_code,
-    location
+    geom
 ) VALUES (
     $1, $2, $3,
     $4, $5, $6, $7, $8, $9,
@@ -295,7 +295,7 @@ INSERT INTO geo_store (
     $14, $15,
     ST_SetSRID(ST_MakePoint($16, $17), 4326)
 )
-ON CONFLICT (id) DO NOTHING
+ON CONFLICT (store_id) DO NOTHING
 """
 
 

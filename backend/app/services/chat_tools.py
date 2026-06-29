@@ -14,8 +14,14 @@ from langchain_core.tools import tool
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
+from app.core.config import get_settings
+from app.core.geo import geocode_station
 from app.core.masking import mask_name
-from app.services.analysis import run_get_population, run_market_analysis
+from app.services.analysis import (
+    run_competition_percentile,
+    run_get_population,
+    run_market_analysis,
+)
 
 # 개별 도구 호출 타임아웃(초) — DB 또는 외부 API 응답 지연 시 hang 방지
 _TOOL_TIMEOUT = 25
@@ -62,16 +68,22 @@ def make_analysis_tools(
         use_lat = req_lat if (not station and _has_coords) else None
         use_lng = req_lng if (not station and _has_coords) else None
         effective_station = station or '현재 위치'
-        async with asyncio.timeout(_TOOL_TIMEOUT):
-            full = await run_market_analysis(
-                db,
-                redis,
-                effective_station,
-                category,
-                radius,
-                lat=use_lat,
-                lng=use_lng,
-            )
+        try:
+            async with asyncio.timeout(_TOOL_TIMEOUT):
+                full = await run_market_analysis(
+                    db,
+                    redis,
+                    effective_station,
+                    category,
+                    radius,
+                    lat=use_lat,
+                    lng=use_lng,
+                )
+        except TimeoutError:
+            return {
+                'error': 'tool_timeout',
+                'message': f'{effective_station} 데이터 조회 시간이 초과됐습니다. 반경을 줄이거나 잠시 후 다시 시도해주세요.',
+            }
         m = full['metrics']
         top_competitors = [
             {
@@ -81,13 +93,32 @@ def make_analysis_tools(
             }
             for c in full.get('competitors', [])[:15]
         ]
+        # 지도 시각화용: 좌표는 포함, 상호명은 마스킹
+        competitors_for_map = [
+            {
+                'id': c.get('id'),
+                'name': mask_name(c['name']),
+                'lat': c.get('lat'),
+                'lng': c.get('lng'),
+                'type': c.get('type', 'same'),
+                'category': c.get('category', ''),
+            }
+            for c in full.get('competitors', [])
+        ]
         return {
             'summary': full.get('summary', ''),
             'station': full['station'],
             'category': full['category'],
             'radius_m': full['radius'],
+            'radius': full['radius'],
             'dong_name': full.get('dong_name'),
+            'coords': full.get('coords', {}),
+            'competitors': competitors_for_map,
             'top_competitors': top_competitors,
+            'tags': full.get('tags', []),
+            'summarize': full.get('summarize', {}),
+            'sources': full.get('sources', []),
+            'scope': full.get('scope', {}),
             'metrics': {
                 'competitor_count': m['competitor_count'],
                 'competition_percentile': m['competition_percentile'],
@@ -111,7 +142,6 @@ def make_analysis_tools(
                 'population_by_age_ratio': m.get('population_by_age_ratio'),
                 'top_population_age': m.get('top_population_age'),
             },
-            'summarize': full.get('summarize', {}),
         }
 
     @tool
@@ -127,10 +157,16 @@ def make_analysis_tools(
             radius: 분석 반경(미터). 언급 없으면 500.
         """
         effective_station = station or '현재 위치'
-        async with asyncio.timeout(_TOOL_TIMEOUT):
-            return await run_get_population(
-                db, redis, effective_station, category, radius
-            )
+        try:
+            async with asyncio.timeout(_TOOL_TIMEOUT):
+                return await run_get_population(
+                    db, redis, effective_station, category, radius
+                )
+        except TimeoutError:
+            return {
+                'error': 'tool_timeout',
+                'message': f'{effective_station} 생활인구 조회 시간이 초과됐습니다.',
+            }
 
     @tool
     async def calc_competition_percentile(
@@ -138,31 +174,34 @@ def make_analysis_tools(
     ) -> dict:
         """경쟁 밀집도 퍼센타일만 빠르게 조회합니다.
         "이 동네 경쟁 심한가요?" 처럼 밀집도 수치만 필요할 때 호출합니다.
-        결과는 run_market_analysis 캐시를 재사용하므로 추가 DB 부하가 없습니다.
+        경쟁업체 조회만 수행하므로 search_competitors보다 빠릅니다.
 
         Args:
             station: 지하철역 또는 동네명.
             category: 업종명.
             radius: 분석 반경(미터). 언급 없으면 500.
         """
-        async with asyncio.timeout(_TOOL_TIMEOUT):
-            result = await run_market_analysis(db, redis, station, category, radius)
-        metrics = result['metrics']
-        percentile = metrics['competition_percentile']
-        if percentile >= 70:
-            label = f'서울 상위 {100 - percentile}%'
-        elif percentile >= 40:
-            label = '서울 중위권'
-        else:
-            label = f'서울 하위 {percentile}%'
+        try:
+            async with asyncio.timeout(_TOOL_TIMEOUT):
+                coords = await geocode_station(
+                    station, get_settings().kakao_rest_api_key, redis
+                )
+                result = await run_competition_percentile(
+                    db, redis, coords['lat'], coords['lng'], category, radius
+                )
+        except TimeoutError:
+            return {
+                'error': 'tool_timeout',
+                'message': f'{station} 밀집도 조회 시간이 초과됐습니다.',
+            }
+        percentile = result['percentile']
         return {
             'station': station,
             'category': category,
             'radius_m': radius,
-            'dong_name': result.get('dong_name'),
-            'competitor_count': metrics['competitor_count'],
+            'competitor_count': result['competitor_count'],
             'competition_percentile': percentile,
-            'percentile_label': label,
+            'percentile_label': result['label'],
         }
 
     @tool
@@ -189,5 +228,5 @@ def make_analysis_tools(
         search_competitors,
         get_population_flow,
         calc_competition_percentile,
-        get_positioning_data,
+        # get_positioning_data,  # 카카오플레이스 연동 완료 시 복원
     ]

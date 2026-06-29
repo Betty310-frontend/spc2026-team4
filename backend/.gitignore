@@ -24,11 +24,14 @@ venv/
 *.log
 *.txt
 
-# Data
+# Data (raw/대용량 파일)
 *.csv
 
 # docker volumes
 db_data/
+
+# DB dump (대용량 바이너리 — git 히스토리 오염 방지)
+*.dump
 
 # macOS
 .DS_Store
@@ -36,6 +39,11 @@ db_data/
 # local-only dev files
 CLAUDE.md
 docker-compose.override.yml
-docker/
+docker-compose.local.yml
+nginx.local.conf
 docs/
 data/
+deploy*.sh
+
+# SSL 인증서 (로컬 자가서명)
+certs/

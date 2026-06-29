@@ -1,4 +1,4 @@
-"""경쟁 밀집도·H3 집계 — DB 의존 없는 순수 계산 함수."""
+"""경쟁 밀집도·H3 집계·퍼센타일 — DB 의존 없는 순수 계산 함수."""
 
 import math
 from collections import Counter
@@ -25,6 +25,14 @@ def calc_competition_percentile(
     ratio = competitor_count / expected
     percentile = int(50 * ratio)
     return max(0, min(100, percentile))
+
+
+def calc_percentile(value: float, reference_values: list[float]) -> int:
+    """기준값 목록 대비 퍼센타일(0~100)을 반환한다. 빈 목록이면 50을 반환."""
+    if not reference_values:
+        return 50
+    rank = sum(1 for v in reference_values if v < value)
+    return round(rank / len(reference_values) * 100)
 
 
 def build_h3_hexagons(

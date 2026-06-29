@@ -12,11 +12,17 @@ class Store(Base):
     name: Mapped[str | None] = mapped_column('name', Text)
     branch: Mapped[str | None] = mapped_column('branch', Text)
 
-    category_large_code: Mapped[str | None] = mapped_column('category_large_code', String(10))
+    category_large_code: Mapped[str | None] = mapped_column(
+        'category_large_code', String(10)
+    )
     category_large_name: Mapped[str | None] = mapped_column('category_large_name', Text)
-    category_mid_code: Mapped[str | None] = mapped_column('category_mid_code', String(10))
+    category_mid_code: Mapped[str | None] = mapped_column(
+        'category_mid_code', String(10)
+    )
     category_mid_name: Mapped[str | None] = mapped_column('category_mid_name', Text)
-    category_small_code: Mapped[str | None] = mapped_column('category_small_code', String(10))
+    category_small_code: Mapped[str | None] = mapped_column(
+        'category_small_code', String(10)
+    )
     category_small_name: Mapped[str | None] = mapped_column('category_small_name', Text)
     display_name: Mapped[str | None] = mapped_column('display_name', Text)
 
