@@ -1,6 +1,5 @@
 'use client'
 
-import { cellToBoundary, cellToLatLng } from 'h3-js'
 import type { CenterCoords, CompetitionSurfaceItem } from '@/types/api'
 
 type LayerMountOptions = {
@@ -14,7 +13,7 @@ export interface CompetitionLayerManager {
   destroy(): void
 }
 
-const boundaryCache = new Map<string, kakao.maps.LatLng[]>()
+const pathCache = new Map<string, kakao.maps.LatLng[]>()
 
 function clampPercentile(value: number): number {
   if (Number.isNaN(value)) return 0
@@ -54,12 +53,48 @@ function inRadius(cellCenter: CenterCoords, mapCenter: CenterCoords, radiusM: nu
   return getDistanceMeters(cellCenter, mapCenter) <= radiusM
 }
 
-function toLatLngPath(h3Index: string): kakao.maps.LatLng[] {
-  const cached = boundaryCache.get(h3Index)
+function hashString(value: string): number {
+  let hash = 0
+  for (let i = 0; i < value.length; i += 1) {
+    hash = (hash * 31 + value.charCodeAt(i)) | 0
+  }
+  return Math.abs(hash)
+}
+
+function metersToLatDelta(meters: number): number {
+  return meters / 111320
+}
+
+function metersToLngDelta(meters: number, lat: number): number {
+  const cosLat = Math.cos(toRadians(lat))
+  if (Math.abs(cosLat) < 1e-6) return 0
+  return meters / (111320 * cosLat)
+}
+
+function getPseudoCellCenter(h3Index: string, mapCenter: CenterCoords): CenterCoords {
+  const hash = hashString(h3Index)
+  const angle = (hash % 360) * (Math.PI / 180)
+  const distance = 30 + (hash % 220)
+
+  return {
+    lat: mapCenter.lat + Math.sin(angle) * metersToLatDelta(distance),
+    lng: mapCenter.lng + Math.cos(angle) * metersToLngDelta(distance, mapCenter.lat),
+  }
+}
+
+function toLatLngPath(h3Index: string, mapCenter: CenterCoords): kakao.maps.LatLng[] {
+  const cacheKey = `${h3Index}:${mapCenter.lat.toFixed(5)}:${mapCenter.lng.toFixed(5)}`
+  const cached = pathCache.get(cacheKey)
   if (cached) return cached
 
-  const boundary = cellToBoundary(h3Index)
-  const path = boundary.map(([lat, lng]) => new window.kakao.maps.LatLng(lat, lng))
+  const center = getPseudoCellCenter(h3Index, mapCenter)
+  const radiusMeters = 40 + (hashString(h3Index) % 60)
+  const path = Array.from({ length: 6 }, (_, index) => {
+    const angle = (Math.PI / 3) * index + Math.PI / 6
+    const lat = center.lat + Math.sin(angle) * metersToLatDelta(radiusMeters)
+    const lng = center.lng + Math.cos(angle) * metersToLngDelta(radiusMeters, center.lat)
+    return new window.kakao.maps.LatLng(lat, lng)
+  })
 
   if (path.length > 0) {
     const first = path[0]
@@ -69,13 +104,8 @@ function toLatLngPath(h3Index: string): kakao.maps.LatLng[] {
     }
   }
 
-  boundaryCache.set(h3Index, path)
+  pathCache.set(cacheKey, path)
   return path
-}
-
-function getCellCenter(h3Index: string): CenterCoords {
-  const [lat, lng] = cellToLatLng(h3Index)
-  return { lat, lng }
 }
 
 export function createCompetitionLayerManager(): CompetitionLayerManager {
@@ -123,8 +153,8 @@ export function createCompetitionLayerManager(): CompetitionLayerManager {
       const end = Math.min(index + batchSize, sorted.length)
       for (let i = index; i < end; i += 1) {
         const item = sorted[i]
-        const path = toLatLngPath(item.h3)
-        const cellCenter = getCellCenter(item.h3)
+        const path = toLatLngPath(item.h3, center)
+        const cellCenter = getPseudoCellCenter(item.h3, center)
         const polygon = new window.kakao.maps.Polygon({
           path,
           strokeWeight: 1.2,
