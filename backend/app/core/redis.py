@@ -21,23 +21,16 @@ async def init_redis_pool() -> None:
     global _redis_pool
     settings = get_settings()
 
-    if settings.redis_local_url:
-        pool = await _try_pool(settings.redis_local_url)
-        if pool:
-            print(f'[Redis] 로컬 연결 성공: {settings.redis_local_url}')
-            _redis_pool = pool
-            return
-        print(f'[Redis] 로컬 연결 실패: {settings.redis_local_url}')
+    if not settings.redis_cloud_url:
+        raise RuntimeError('[Redis] REDIS_CLOUD_URL이 설정되지 않았습니다.')
 
-    if settings.redis_cloud_url:
-        pool = await _try_pool(settings.redis_cloud_url)
-        if pool:
-            print('[Redis] 클라우드 연결 성공')
-            _redis_pool = pool
-            return
-        print('[Redis] 클라우드 연결 실패')
+    pool = await _try_pool(settings.redis_cloud_url)
+    if pool:
+        print('[Redis] 클라우드 연결 성공')
+        _redis_pool = pool
+        return
 
-    raise RuntimeError('[Redis] 로컬/클라우드 모두 연결 불가')
+    raise RuntimeError('[Redis] 클라우드 연결 불가')
 
 
 def get_redis_pool() -> ConnectionPool:

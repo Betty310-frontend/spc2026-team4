@@ -36,6 +36,10 @@ db_data/
 # macOS
 .DS_Store
 
+# deploy
+depoly.prod.sh
+depoly.dev.sh
+
 # local-only dev files
 CLAUDE.md
 docker-compose.override.yml
