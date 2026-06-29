@@ -1,6 +1,7 @@
 'use client'
 
 import { useCallback, useRef, useEffect } from 'react'
+import { useAnalysisContext } from '@/store/analysisContext'
 import {
   useAnalysisResult,
   abortMapUpdate,
@@ -12,6 +13,7 @@ import {
 } from '@/lib/api-client'
 import { applyCompetitors, normalizeCompetitors } from '@/lib/agent-event-bridge'
 import { isValidCategory } from '@/lib/category'
+import { reverseGeocode } from '@/lib/geocode'
 import { getApiErrorMessage } from '@/constants/error-messages'
 import type { AgentMessage } from '@/types/message'
 
@@ -34,15 +36,21 @@ function formatNumber(value: number | null | undefined): string {
 }
 
 export function useAnalysis(options: UseAnalysisOptions = {}) {
+  const { setAnalysisContext } = useAnalysisContext()
   const { updateMetric, setMapOptions, startLoading, stopLoading, isLoading } =
     useAnalysisResult()
   const lastParamsRef = useRef<AnalysisParams | null>(null)
+  const setAnalysisContextRef = useRef(setAnalysisContext)
 
   // options를 ref로 캡처해 useCallback 의존성 안정화
   const onAgentMessageRef = useRef(options.onAgentMessage)
   useEffect(() => {
     onAgentMessageRef.current = options.onAgentMessage
   }, [options.onAgentMessage])
+
+  useEffect(() => {
+    setAnalysisContextRef.current = setAnalysisContext
+  }, [setAnalysisContext])
 
   const runAnalysis = useCallback(async (params: AnalysisParams) => {
     lastParamsRef.current = params
@@ -68,6 +76,18 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
 
       applyCompetitors(normalizeCompetitors(comp))
 
+      let populationDongCode = params.행정동코드 ?? null
+      if (!populationDongCode && comp.center) {
+        const geoResult = await reverseGeocode(comp.center.lat, comp.center.lng)
+        if (geoResult?.dongCode) {
+          populationDongCode = geoResult.dongCode
+          setAnalysisContextRef.current({
+            dongCode: geoResult.dongCode,
+            fullLocationName: geoResult.fullName,
+          })
+        }
+      }
+
       // Step 2: density + population 병렬 조회
       const [density, pop] = await Promise.allSettled([
         fetchCompetitionPercentile({
@@ -76,8 +96,8 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
           업종: params.업종,
           반경: params.반경,
         }),
-        params.행정동코드
-          ? fetchPopulation({ 행정동코드: params.행정동코드, 업종: params.업종 })
+        populationDongCode
+          ? fetchPopulation({ 행정동코드: populationDongCode, 업종: params.업종 })
           : Promise.reject(new Error('행정동코드 없음')),
       ])
 

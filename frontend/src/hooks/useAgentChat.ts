@@ -48,6 +48,10 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
 
   const transport = useMemo(() => new DefaultChatTransport(), [])
 
+  function isRecord(value: unknown): value is Record<string, unknown> {
+    return typeof value === 'object' && value !== null
+  }
+
   const { messages, sendMessage, status, stop } = useChat({
     transport,
 
@@ -56,8 +60,37 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
 
       if (typeof dataPartAny.type === 'string' && dataPartAny.type.startsWith('data-')) {
         if (dataPartAny.type === 'data-search_competitors' && dataPartAny.data) {
-          if (typeof dataPartAny.data === 'object' && dataPartAny.data !== null) {
+          if (isRecord(dataPartAny.data)) {
             applyCompetitors(normalizeCompetitors(dataPartAny.data as CompetitorsApiResponse))
+          }
+        } else if (
+          dataPartAny.type === 'data-tool-start' &&
+          isRecord(dataPartAny.data) &&
+          dataPartAny.data.tool === 'search_competitors' &&
+          isRecord(dataPartAny.data.input)
+        ) {
+          parseContextFromToolArgs(
+            'search_competitors',
+            dataPartAny.data.input,
+            setAnalysisContext,
+          )
+        } else if (
+          dataPartAny.type === 'data-map' &&
+          isRecord(dataPartAny.data)
+        ) {
+          const center = isRecord(dataPartAny.data.center)
+            ? {
+                lat: typeof dataPartAny.data.center.lat === 'number' ? dataPartAny.data.center.lat : null,
+                lng: typeof dataPartAny.data.center.lng === 'number' ? dataPartAny.data.center.lng : null,
+              }
+            : null
+
+          if (center?.lat != null && center?.lng != null) {
+            setAnalysisContext({ center: { lat: center.lat, lng: center.lng } })
+          }
+
+          if (typeof dataPartAny.data.dong_name === 'string' && dataPartAny.data.dong_name) {
+            setAnalysisContext({ location: dataPartAny.data.dong_name })
           }
         }
         return
@@ -66,6 +99,14 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
       if (typeof dataPartAny.data === 'string') {
         const evt = parseAgentEventLine(dataPartAny.data)
         if (evt) applyAgentEventToStore(evt)
+      } else if (isRecord(dataPartAny.data) && typeof dataPartAny.type === 'string') {
+        const evt = {
+          event: dataPartAny.type.replace(/^data-/, ''),
+          ...dataPartAny.data,
+        }
+        if (isRecord(evt) && typeof evt.event === 'string') {
+          applyAgentEventToStore(evt as { event: 'tool' | 'status' | 'delta' })
+        }
       }
     },
 

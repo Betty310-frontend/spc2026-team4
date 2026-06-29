@@ -78,11 +78,18 @@ function filterAiSdkStream(body: ReadableStream<Uint8Array>): ReadableStream<Uin
               AI_SDK_KNOWN_TYPES.has(t) || // 인식된 타입 — 통과
               t.startsWith('data-') // custom data-* 타입 — 통과
             ) {
+              controller.enqueue(encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`))
+            } else {
+              // 백엔드 커스텀 이벤트는 AI SDK custom data 이벤트로 재포장해 프론트에서 읽게 한다.
               controller.enqueue(
-                encoder.encode(`data: ${JSON.stringify(parsed)}\n\n`),
+                encoder.encode(
+                  `data: ${JSON.stringify({
+                    type: `data-${t}`,
+                    data: parsed,
+                  })}\n\n`,
+                ),
               )
             }
-            // "session", "thread" 등 미인식 타입 — 무시
           } catch {
             // JSON 파싱 실패 — 그대로 통과
             controller.enqueue(encoder.encode(event + '\n\n'))
