@@ -2,7 +2,7 @@
 
 import type { UIMessage } from 'ai'
 import { applyCompetitorsFromRest as applyCompetitorsFromAnalysisStore } from '@/store/analysisResult'
-import type { CompetitorItem } from '@/types/api'
+import type { CompetitorItem, SearchCompetitorsToolResponse } from '@/types/api'
 
 export type AgentEvent = {
   event: 'tool' | 'status' | 'delta'
@@ -30,7 +30,7 @@ export type CompetitorsApiResponse = {
   data_source?: string
   base_date?: string
   fallback_reason?: string | null
-}
+} | SearchCompetitorsToolResponse
 
 export type NormalizedCompetitors = {
   sameCount: number
@@ -60,6 +60,12 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null
 }
 
+function isSearchCompetitorsToolResponse(
+  value: CompetitorsApiResponse,
+): value is SearchCompetitorsToolResponse {
+  return isRecord(value) && 'metrics' in value && 'top_competitors' in value
+}
+
 export function parseAgentEventLine(line: string): AgentEvent | null {
   const trimmed = line.trim()
   if (!trimmed) return null
@@ -77,21 +83,42 @@ export function parseAgentEventLine(line: string): AgentEvent | null {
 }
 
 export function normalizeCompetitors(input: CompetitorsApiResponse): NormalizedCompetitors {
-  const items = (input.competitors ?? input.data ?? []).map((item) => toCompetitorItem(item))
-  const sameCount = input.same_count ?? input.same_type ?? items.filter((item) => item.type === 'same').length
+  const isSearch = isSearchCompetitorsToolResponse(input)
+  const items = isSearch ? [] : (input.competitors ?? input.data ?? []).map((item) => toCompetitorItem(item))
+  const metrics = isSearch ? input.metrics : null
+  const sameCount =
+    ('same_count' in input ? input.same_count : undefined) ??
+    ('same_type' in input ? input.same_type : undefined) ??
+    metrics?.competitor_count ??
+    items.filter((item) => item.type === 'same').length
   const similarCount =
-    input.similar_count ?? input.similar_type ?? items.filter((item) => item.type === 'similar').length
+    ('similar_count' in input ? input.similar_count : undefined) ??
+    ('similar_type' in input ? input.similar_type : undefined) ??
+    items.filter((item) => item.type === 'similar').length
+  const center = !isSearch && 'center' in input ? input.center : undefined
+  const source = isSearch
+    ? '소상공인시장진흥공단'
+    : ('source' in input ? input.source : undefined) ??
+      ('data_source' in input ? input.data_source : undefined)
+  const asOf =
+    ('as_of' in input ? input.as_of : undefined) ??
+    ('base_date' in input ? input.base_date : undefined) ??
+    metrics?.data_reference_month
+  const fallback = 'fallback' in input ? input.fallback : false
+  const radiusM = !isSearch && 'radius_m' in input ? input.radius_m : undefined
+  const total =
+    ('total' in input ? input.total : undefined) ?? metrics?.competitor_count ?? items.length
 
   return {
     sameCount,
     similarCount,
     items,
-    center: input.center,
-    source: input.source ?? input.data_source,
-    asOf: input.as_of ?? input.base_date,
-    fallback: input.fallback,
-    radiusM: input.radius_m,
-    total: input.total ?? items.length,
+    center,
+    source,
+    asOf,
+    fallback,
+    radiusM,
+    total,
   }
 }
 

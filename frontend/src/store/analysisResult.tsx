@@ -9,8 +9,9 @@ export type MetricStatus = 'idle' | 'loading' | 'done' | 'error' | 'fallback'
 export interface MetricCard {
   status: MetricStatus
   value?: string
+  unit?: string
   badge?: string
-  badgeTier?: 'high' | 'mid' | 'low'
+  badgeTier?: 'high' | 'mid' | 'low' | 'info'
   source?: string
   isFallback?: boolean
 }
@@ -173,6 +174,7 @@ export function AnalysisResultProvider({ children }: { children: React.ReactNode
         data: {
           status,
           value: `${payload.sameCount}곳`,
+          unit: '곳',
           badge: `총 ${payload.total ?? payload.items.length}곳`,
           source,
           isFallback: payload.fallback,

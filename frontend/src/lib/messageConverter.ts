@@ -116,11 +116,21 @@ function formatToolResult(toolName: string, result: unknown): string {
   const r = result as Record<string, unknown>
   switch (toolName) {
     case 'search_competitors':
-      return `완료 — 동일 업종 ${r.count}곳 (${r.source} · ${r.date})`
+      if ('metrics' in r && r.metrics && typeof r.metrics === 'object') {
+        const metrics = r.metrics as Record<string, unknown>
+        const count = metrics.competitor_count ?? metrics.competitorCount ?? r.count
+        const density = metrics.competition_percentile ?? r.percentile
+        return `완료 — 동일 업종 ${count}곳${density != null ? ` · 경쟁 밀집도 ${density}P` : ''}`
+      }
+      return `완료 — 동일 업종 ${r.count}곳`
     case 'get_population_flow':
-      return `완료 — 유동인구 ${r.percentile}P (${r.timeRange})`
+      if (r.avg_peak_population != null) {
+        const peakHour = typeof r.peak_population_hour === 'string' ? ` · ${r.peak_population_hour}` : ''
+        return `완료 — 유동인구 ${r.avg_peak_population}명${peakHour}`
+      }
+      return `완료 — 유동인구 ${r.percentile}P`
     case 'calc_competition_percentile':
-      return `완료 — 경쟁 밀집도 ${r.percentile}P`
+      return `완료 — 경쟁 밀집도 ${r.competition_percentile ?? r.percentile}P`
     default:
       return '완료'
   }

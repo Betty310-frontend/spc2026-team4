@@ -24,6 +24,11 @@ interface UseAnalysisOptions {
   onAgentMessage?: (message: Omit<AgentMessage, 'id' | 'role'>) => void
 }
 
+function formatNumber(value: number | null | undefined): string {
+  if (value == null || !Number.isFinite(value)) return '—'
+  return new Intl.NumberFormat('ko-KR').format(value)
+}
+
 export function useAnalysis(options: UseAnalysisOptions = {}) {
   const { updateMetric, setMapOptions } = useAnalysisResult()
   const [isLoading, setIsLoading] = useState(false)
@@ -71,7 +76,8 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
         const d = density.value
         updateMetric('density', {
           status: d.fallback ? 'fallback' : 'done',
-          value: `${d.percentile}P`,
+          value: formatNumber(d.percentile),
+          unit: 'P',
           badge: d.label,
           badgeTier: d.tier as 'high' | 'mid' | 'low',
           source: `${d.data_source} · ${d.base_date}`,
@@ -89,18 +95,33 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
 
       if (pop.status === 'fulfilled') {
         const p = pop.value
-        const percentile = p.percentile ?? 0
+        const percentile = p.percentile
         updateMetric('population', {
           status: p.fallback ? 'fallback' : 'done',
-          value: `${percentile}P`,
-          badge: `서울 상위 ${100 - percentile}%`,
-          badgeTier: percentile >= 70 ? 'high' : percentile >= 40 ? 'mid' : 'low',
+          value: formatNumber(p.weighted_avg),
+          unit: '명',
+          badge:
+            percentile != null
+              ? `서울 상위 ${100 - percentile}%`
+              : p.time_weights_applied?.length
+                ? p.time_weights_applied.join(' · ')
+                : undefined,
+          badgeTier:
+            percentile == null
+              ? p.time_weights_applied?.length
+                ? 'info'
+                : undefined
+              : percentile >= 70
+                ? 'high'
+                : percentile >= 40
+                  ? 'mid'
+                  : 'low',
           source: `${p.data_source} · ${p.base_date}`,
           isFallback: p.fallback,
         })
       } else {
         // 행정동코드 없으면 fallback 처리
-        updateMetric('population', { status: 'fallback', value: '—', isFallback: true })
+        updateMetric('population', { status: 'fallback', value: '—', unit: '명', isFallback: true })
       }
     } catch (err) {
       abortMapUpdate()
