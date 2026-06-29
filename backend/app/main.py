@@ -9,10 +9,12 @@ from app.api.v1.api import router as api_v1_router
 from app.core.config import get_settings
 from app.core.database import get_engine, init_engine
 from app.core.redis import init_redis_pool
+from app.services import static_data
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    static_data.load()
     await init_engine()
     await init_redis_pool()
     yield
@@ -23,7 +25,7 @@ app = FastAPI(lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=['*'],
+    allow_origins=get_settings().cors_origins,
     allow_credentials=True,
     allow_methods=['*'],
     allow_headers=['*'],
@@ -34,7 +36,7 @@ app.include_router(api_v1_router, prefix='/api/v1')
 
 @app.get('/')
 async def index():
-    return {'message': 'Hello World!!!!!!'}
+    return {'status': 'ok', 'service': 'spc-team-api'}
 
 
 def start_dev():

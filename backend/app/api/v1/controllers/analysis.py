@@ -1,14 +1,8 @@
-import json
-
 from fastapi import APIRouter, Depends, Query
 from redis.asyncio import Redis
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_redis_client
-from app.core.analysis_utils import build_h3_hexagons
-from app.core.category_map import get_category_filter
-from app.core.geo import resolve_coords
-from app.core.redis import encode_geohash
 from app.dto.analysis import (
     CenterCoords,
     CompetitionPercentileResponse,
@@ -21,13 +15,13 @@ from app.dto.analysis import (
 from app.services.analysis import (
     run_competition_percentile,
     run_get_population_by_dong,
+    run_h3_hexagons,
     run_market_analysis,
 )
-from app.services.store import search_competitors
 
 router = APIRouter()
 
-_CACHE_TTL = 60 * 60 * 24
+_SOSANG_BASE_DATE = '2026-03'  # 상가업소정보 202603 파일 기준
 
 
 @router.get('/competitors')
@@ -51,7 +45,7 @@ async def get_competitors(
         same_type=len(same),
         similar_type=len(similar),
         data_source='소상공인시장진흥공단',
-        base_date='2026-03',
+        base_date=_SOSANG_BASE_DATE,
         center=CenterCoords(**result['coords']),
         radius_m=radius,
         fallback=False,
@@ -108,20 +102,5 @@ async def get_h3_hexagons(
     db: AsyncSession = Depends(get_async_db),
     redis: Redis = Depends(get_redis_client),
 ) -> list[H3HexagonItem]:
-    cat_filter = get_category_filter(category)
-    cache_category = cat_filter.display_name if cat_filter else category
-    coords = resolve_coords(station)
-    geohash_str = encode_geohash(coords['lat'], coords['lng'], precision=7)
-    cache_key = f'h3hex:{cache_category}:{geohash_str}:{radius}:{resolution}'
-
-    cached = await redis.get(cache_key)
-    if cached:
-        return [H3HexagonItem(**item) for item in json.loads(cached)]
-
-    competitors = await search_competitors(
-        db, coords['lat'], coords['lng'], radius, cat_filter
-    )
-    hexagons = build_h3_hexagons(competitors, resolution=resolution)
-
-    await redis.setex(cache_key, _CACHE_TTL, json.dumps(hexagons, ensure_ascii=False))
+    hexagons = await run_h3_hexagons(db, redis, station, category, radius, resolution)
     return [H3HexagonItem(**item) for item in hexagons]

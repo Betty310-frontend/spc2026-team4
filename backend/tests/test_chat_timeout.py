@@ -4,8 +4,6 @@ import asyncio
 import json
 from unittest.mock import AsyncMock, patch
 
-import pytest
-
 from app.services.chat import _sse
 from app.services.chat_tools import make_analysis_tools
 
@@ -81,8 +79,11 @@ class TestSseFormat:
 
 
 class TestToolTimeout:
-    def test_search_competitors_raises_on_slow_analysis(self):
-        """run_market_analysis가 타임아웃보다 오래 걸리면 asyncio.TimeoutError가 전파된다."""
+    def test_search_competitors_returns_error_on_slow_analysis(self):
+        """run_market_analysis가 타임아웃보다 오래 걸리면 tool_timeout 에러 dict를 반환한다.
+
+        도구는 TimeoutError를 내부에서 catch해 에이전트가 계속 동작할 수 있도록 설계됐다.
+        """
 
         async def slow_analysis(*args, **kwargs):
             await asyncio.sleep(10)
@@ -94,14 +95,14 @@ class TestToolTimeout:
             ):
                 tools = make_analysis_tools(AsyncMock(), AsyncMock())
                 search_tool = next(t for t in tools if t.name == 'search_competitors')
-                with pytest.raises(asyncio.TimeoutError):
-                    await search_tool.ainvoke(
-                        {'station': '연남동', 'category': '카페', 'radius': 500}
-                    )
+                result = await search_tool.ainvoke(
+                    {'station': '연남동', 'category': '카페', 'radius': 500}
+                )
+                assert result['error'] == 'tool_timeout'
 
         asyncio.run(_run())
 
-    def test_get_population_flow_raises_on_slow_analysis(self):
+    def test_get_population_flow_returns_error_on_slow_analysis(self):
         async def slow_population(*args, **kwargs):
             await asyncio.sleep(10)
 
@@ -112,30 +113,36 @@ class TestToolTimeout:
             ):
                 tools = make_analysis_tools(AsyncMock(), AsyncMock())
                 pop_tool = next(t for t in tools if t.name == 'get_population_flow')
-                with pytest.raises(asyncio.TimeoutError):
-                    await pop_tool.ainvoke(
-                        {'station': '연남동', 'category': '카페', 'radius': 500}
-                    )
+                result = await pop_tool.ainvoke(
+                    {'station': '연남동', 'category': '카페', 'radius': 500}
+                )
+                assert result['error'] == 'tool_timeout'
 
         asyncio.run(_run())
 
-    def test_calc_competition_percentile_raises_on_slow_analysis(self):
+    def test_calc_competition_percentile_returns_error_on_slow_analysis(self):
         async def slow_analysis(*args, **kwargs):
             await asyncio.sleep(10)
 
         async def _run():
             with (
                 patch('app.services.chat_tools._TOOL_TIMEOUT', 0.05),
-                patch('app.services.chat_tools.run_market_analysis', slow_analysis),
+                patch(
+                    'app.services.chat_tools.run_competition_percentile', slow_analysis
+                ),
+                patch(
+                    'app.services.chat_tools.geocode_station',
+                    AsyncMock(return_value={'lat': 37.55, 'lng': 126.92}),
+                ),
             ):
                 tools = make_analysis_tools(AsyncMock(), AsyncMock())
                 pct_tool = next(
                     t for t in tools if t.name == 'calc_competition_percentile'
                 )
-                with pytest.raises(asyncio.TimeoutError):
-                    await pct_tool.ainvoke(
-                        {'station': '연남동', 'category': '카페', 'radius': 500}
-                    )
+                result = await pct_tool.ainvoke(
+                    {'station': '연남동', 'category': '카페', 'radius': 500}
+                )
+                assert result['error'] == 'tool_timeout'
 
         asyncio.run(_run())
 
@@ -179,26 +186,15 @@ class TestToolTimeout:
         assert 0 < ct._TOOL_TIMEOUT < 90
 
     def test_all_expected_tools_are_registered(self):
-        """make_analysis_tools가 4개 도구를 모두 반환하는지 확인한다."""
+        """make_analysis_tools가 3개 도구를 반환하는지 확인한다.
+
+        get_positioning_data는 카카오플레이스 연동 전까지 툴 목록에서 제외됐다.
+        """
         tools = make_analysis_tools(AsyncMock(), AsyncMock())
         names = {t.name for t in tools}
         expected = {
             'search_competitors',
             'get_population_flow',
             'calc_competition_percentile',
-            'get_positioning_data',
         }
         assert names == expected
-
-    def test_stub_tools_return_available_false(self):
-        """get_positioning_data 스텁은 available=False를 반환한다."""
-
-        async def _run():
-            tools = make_analysis_tools(AsyncMock(), AsyncMock())
-            pos_tool = next(t for t in tools if t.name == 'get_positioning_data')
-            pos_result = await pos_tool.ainvoke(
-                {'station': '연남동', 'category': '카페', 'radius': 500}
-            )
-            assert pos_result['available'] is False
-
-        asyncio.run(_run())

@@ -36,3 +36,13 @@ repos:
         types: [python]
         files: ^backend/app/
         pass_filenames: false
+
+      # pytest: push 시에만 실행 (커밋마다 돌면 느림)
+      - id: pytest
+        name: pytest
+        entry: uv run --directory backend pytest
+        language: system
+        types: [python]
+        files: ^backend/
+        pass_filenames: false
+        stages: [pre-push]

@@ -14,6 +14,7 @@ COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev
 
 COPY app/ ./app/
+COPY static_data/ ./static_data/
 
 ENV PATH="/app/.venv/bin:$PATH"
 
