@@ -1,0 +1,12 @@
+certs/
+.venv
+__pycache__
+*.pyc
+.env
+.env.local
+data/
+static_data/raw_sosang/
+tests/
+alembic/
+docs/
+scripts/
