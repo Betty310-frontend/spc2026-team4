@@ -15,8 +15,34 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.llm import get_llm
 from app.dto.chat import UIMessage
-from app.services.chat_tools import make_analysis_tools
+from app.services.chat_tools import CategoryType, make_analysis_tools
 from app.services.rag_service import search_rag_chunks
+
+_CATEGORY_LIST = ', '.join(CategoryType.__args__)  # type: ignore[attr-defined]
+
+_CATEGORY_SYSTEM = f"""사용자 텍스트에서 창업·분석하려는 업종을 파악해 아래 목록 중 가장 가까운 하나만 반환해라.
+해당 없으면(노트북·약국·의류·부동산 등) 'none'만 반환해라.
+목록 이외의 단어는 절대 반환하지 마라.
+
+{_CATEGORY_LIST}"""
+
+
+async def _resolve_category_llm(text: str) -> str | None:
+    """자연어 텍스트에서 업종을 추출해 15개 카테고리 중 하나로 반환. 매핑 불가 시 None."""
+    try:
+        resp = await get_llm().ainvoke(
+            [
+                SystemMessage(content=_CATEGORY_SYSTEM),
+                HumanMessage(content=text),
+            ]
+        )
+        result = str(resp.content).strip()
+        valid = set(CategoryType.__args__)  # type: ignore[attr-defined]
+        return result if result in valid else None
+    except Exception as e:
+        print(f'[category_resolve] 실패: {e}')
+        return None
+
 
 # thread별 마지막 분석 조건을 Redis에 저장할 때 사용하는 키 포맷 및 TTL
 _CTX_KEY_FMT = 'ctx:{thread_id}'
@@ -72,16 +98,25 @@ _SYSTEM = """
 - 이미 분석된 결과에 대한 질문이나 추가 설명 요청은 도구 없이 답해라.
 - 위치 추출: 역명·동네명만 station으로. 예: "선정릉역 4번 출구" → "선정릉역", "홍대 근처" → "홍대입구역"
   텍스트에서 위치를 파악할 수 없으면("여기", "이 위치", "현재 위치" 등) station을 빈 문자열("")로 전달해라. 시스템이 좌표로 자동 처리한다.
-- 업종 정규화: 아래 표에 있는 변환만 허용하고, 없으면 그대로 사용해라. 임의로 상위 카테고리로 올리지 마라.
-  커피숍·커피·카페테리아 → 카페 / 헤어샵·헤어·미용·이용원 → 미용실 / 식당·밥집 → 음식점
-  분식집·떡볶이 → 분식 / 치킨집·후라이드치킨 → 치킨 / 술집·호프·바 → 주점
-  베이커리·빵집 → 제과점 / 병원·내과·소아과·피부과 → 의원
-- 위치 제한: 부산·대구·인천·광주·대전·울산·세종 등 서울특별시 외 타 시·도가 명확한 경우에만 "서울 지역만 분석 가능"이라고 안내하고 도구 호출 없이 답해라. 여의도·신당동·홍대·이태원·잠실 등 서울 내 동네명·역명·구명은 반드시 서울 지역으로 간주하고 정상 처리해라. 위치가 서울인지 불분명하면 서울로 간주하고 처리해라.
+- 업종 추출: 사용자 메시지에서 업종을 파악한 뒤, 아래 목록 중 가장 가까운 항목을 category로 넘겨라.
+  반드시 아래 목록 중 하나를 그대로 사용해라.
+
+  백반/한정식 | 카페 | 미용실 | 입시·교과학원 | 편의점
+  김밥/만두/분식 | 돼지고기 구이/찜 | 요리 주점 | 피부 관리실
+  일식 회/초밥 | 빵/도넛 | 치킨 | 네일숍 | 요가/필라테스 학원 | 국/탕/찌개류
+
+  매핑은 자동 처리된다. category 값은 반드시 위 목록 중 하나를 그대로 사용해라.
+- 위치 제한: 사용자가 "부산", "대구", "인천", "광주", "대전", "울산", "세종", "경기도", "과천시", "수원시" 등 서울특별시 외 타 시·도·시 명칭을 명시적으로 언급한 경우에만 "서울 지역만 분석 가능"이라고 안내하고 도구 호출 없이 답해라. 역명(예: 남태령역·사당역·신림역·봉천역 등)·동네명·구명은 서울 경계 근처이거나 네가 불확실하더라도 반드시 서울 지역으로 간주하고 정상 처리해라. 특히 지하철 역명만 언급된 경우 항상 서울로 처리해라. 위치가 서울인지 불분명하면 서울로 간주하고 처리해라.
+- 지하철 노선명(수인분당선·신분당선·경강선·우이신설선 등)만 언급된 경우 서울 노선임을 인식하고 "어느 역에서 분석할까요?" 라고 구체적인 역명을 물어라. 노선명을 station으로 전달하지 마라.
+- 도구가 geocode_failed 오류를 반환하면 "'{station}' 위치를 찾을 수 없습니다. 정확한 역명(예: 압구정로데오역, 선정릉역)이나 동네명(예: 청담동, 연남동)을 알려주세요."라고 안내해라.
 - 업종 누락: 위치는 파악됐으나 업종을 알 수 없으면 도구를 호출하지 말고 "어떤 업종을 생각하고 계신가요? (예: 카페, 음식점, 미용실 등)"라고 되물어라. 업종이 확인된 뒤에 search_competitors를 호출해라.
+- 비지원 업종: 노트북·약국·병원·의류·전자제품·부동산 등 아래 15개 업종에 해당하지 않는 경우 도구를 호출하지 말고 "현재 분석 가능한 업종은 카페, 음식점(한식·분식·일식 등), 미용실, 편의점, 학원, 치킨, 요가/필라테스, 네일숍, 피부관리실입니다."라고 안내해라.
 
 [첫 분석 응답 형식 — search_competitors 결과 수신 시 반드시 아래 항목을 모두 포함해라]
 1. 행정동: dong_name 필드가 있으면 "해당 위치는 {dong_name}에 속합니다"로 시작.
-2. 경쟁업체: competitor_count + competition_percentile → "반경 내 동일 업종 N개, 서울 X퍼센타일 수준"
+2. 경쟁업체: same_count(동일 업종)과 similar_count(유사 업종)를 구분해 표시하고, competition_percentile도 언급해라.
+   similar_count가 0이면 유사업종은 언급하지 마라.
+   예: "반경 내 동일업종 N개, 유사업종 M개 (서울 X퍼센타일 수준)"
 3. 추정매출 (metrics 안의 필드 사용):
    - per_store_est_amt → 업소 1개당 월 추정매출. 이 값을 주요 매출 지표로 사용해라. 만원 단위로 표현.
    - per_store_est_cnt → 업소당 월 추정 거래건수.
@@ -169,19 +204,29 @@ def _build_system_prompt(
         )
     if not station and category:
         prompt += (
-            f'\n[요청 파라미터] category={category}, radius={radius}m.'
-            ' search_competitors 호출 시 반드시 이 반경을 사용해라.'
+            f'\n[업종 사전 분류 완료] category="{category}", radius={radius}m.'
+            f' 업종은 이미 확정됐으므로 재질문하지 말고, 메시지에서 위치만 파악하여'
+            f' 즉시 search_competitors(category="{category}")를 호출해라.'
         )
     return prompt
 
 
-def _log_response(thread_id: str, tools_called: list[str], text: str) -> None:
+def _log_response(
+    thread_id: str,
+    tools_called: list[str],
+    text: str,
+    *,
+    station: str | None = None,
+    category: str | None = None,
+    radius: int | None = None,
+) -> None:
     sep = '─' * 10
     tool_line = (
         f'  tools : {", ".join(tools_called)}' if tools_called else '  tools : (없음)'
     )
     print(f'\n{sep}')
     print(f'  thread: {thread_id}')
+    print(f'  지역명: {station!r}  업종: {category!r}  반경: {radius}m')
     print(tool_line)
     print(f'  reply :\n{text}')
     print(sep)
@@ -325,6 +370,16 @@ async def stream_ui(
         if redis and current_station:
             prev_ctx = await _load_last_context(redis, thread_id)
 
+        last_user = _get_last_user_message(messages)
+        last_user_text = _get_message_text(last_user)
+
+        # 업종이 미지정일 때 전용 LLM으로 먼저 분류
+        if not current_category:
+            resolved = await _resolve_category_llm(last_user_text)
+            if resolved:
+                current_category = resolved
+                print(f'[category_resolve] "{last_user_text[:30]}" → {resolved}')
+
         agent = create_agent(
             model=get_llm(),
             tools=tools,
@@ -340,9 +395,6 @@ async def stream_ui(
 
         state = await agent.aget_state(config)
         has_history = bool(state and state.values and state.values.get('messages'))
-
-        last_user = _get_last_user_message(messages)
-        last_user_text = _get_message_text(last_user)
 
         rag_category = current_category or _infer_category_from_text(last_user_text)
 
@@ -491,7 +543,14 @@ async def stream_ui(
             yield _sse({'type': 'text-end', 'id': part_id})
             yield _sse({'type': 'step', 'label': '답변 생성 완료!', 'done': True})
 
-        _log_response(thread_id, tools_called, ''.join(text_buffer))
+        _log_response(
+            thread_id,
+            tools_called,
+            ''.join(text_buffer),
+            station=current_station,
+            category=current_category,
+            radius=current_radius,
+        )
 
     except asyncio.TimeoutError:
         # 전체 에이전트 실행이 90초 제한을 초과한 경우

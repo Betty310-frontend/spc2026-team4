@@ -5,22 +5,24 @@ def build_summarize(
     station: str,
     radius: int,
     category: str,
-    competitor_count: int,
+    same_count: int,
+    similar_count: int,
     competition_percentile: int,
     per_store_est_amt: int | None = None,
     per_store_est_cnt: int | None = None,
 ) -> dict:
+    similar_str = f', 유사업종 {similar_count}개' if similar_count > 0 else ''
     if competition_percentile >= 70:
         density_desc = (
             f'서울 상위 {100 - competition_percentile}% 수준으로 높은 경쟁 밀집도'
         )
-        risk_density = f'동일 업종 {competitor_count}개 영업 중 — {density_desc}'
+        risk_density = f'동일 업종 {same_count}개{similar_str} 영업 중 — {density_desc}'
     elif competition_percentile >= 40:
         density_desc = '서울 중위권 수준의 경쟁 밀집도'
-        risk_density = f'동일 업종 {competitor_count}개 영업 중 — {density_desc}'
+        risk_density = f'동일 업종 {same_count}개{similar_str} 영업 중 — {density_desc}'
     else:
         density_desc = f'서울 하위 {competition_percentile}% 수준의 낮은 경쟁 밀집도'
-        risk_density = f'동일 업종 {competitor_count}개 영업 중 — {density_desc}. 수요 자체가 낮을 가능성 검토 필요'
+        risk_density = f'동일 업종 {same_count}개{similar_str} 영업 중 — {density_desc}. 수요 자체가 낮을 가능성 검토 필요'
 
     if competition_percentile >= 70:
         swot_threat = (
@@ -43,7 +45,7 @@ def build_summarize(
         )
     elif competition_percentile >= 70:
         positive.append(
-            f'{category} {competitor_count}개가 영업 중인 검증된 상권으로 업종 수요가 확인된 입지입니다.'
+            f'{category} {same_count}개가 영업 중인 검증된 상권으로 업종 수요가 확인된 입지입니다.'
         )
 
     if per_store_est_amt is not None:
@@ -77,8 +79,8 @@ def build_summarize(
                 f'반경 내 {category} 업소 분포 데이터 확보 (소상공인진흥공단 기준)'
             ],
             '약점': [
-                f'동일 업종 {competitor_count}개와의 직접 경쟁 불가피'
-                if competitor_count > 0
+                f'동일 업종 {same_count}개와의 직접 경쟁 불가피'
+                if same_count > 0
                 else f'{category} 업종 수요 유무 자체를 현장에서 검증 필요'
             ],
             '기회': [swot_opportunity],

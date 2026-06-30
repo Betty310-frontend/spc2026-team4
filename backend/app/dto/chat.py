@@ -30,10 +30,10 @@ class ChatRequest(BaseModel):
         'json_schema_extra': {
             'examples': [
                 {
-                    'id': 'thread-001',
+                    'id': '',
                     'messages': [
                         {
-                            'id': 'msg-1',
+                            'id': '',
                             'role': 'user',
                             'parts': [
                                 {'type': 'text', 'text': '연남동 카페 상권 분석해줘'}
@@ -41,9 +41,9 @@ class ChatRequest(BaseModel):
                             'content': '연남동 카페 상권 분석해줘',
                         }
                     ],
-                    'station': '연남동',
+                    'station': '',
                     'radius': 500,
-                    'category': '카페',
+                    'category': '',
                     'lat': None,
                     'lng': None,
                 }

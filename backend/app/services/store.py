@@ -1,9 +1,7 @@
-"""소상공인시장진흥공단 공공 API 기반 경쟁업체·행정동 조회 서비스."""
+"""geo_store DB 기반 경쟁업체·행정동 조회 서비스."""
 
-import asyncio
-import time
-
-import httpx
+from sqlalchemy import text
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.api_category import resolve_category_display
 from app.core.category_map import (
@@ -11,212 +9,158 @@ from app.core.category_map import (
     get_category_filter,
     get_similar_business_tags,
 )
-from app.core.config import get_settings
-from app.services import static_data as sd
-
-_BASE_URL = 'https://apis.data.go.kr/B553077/api/open/sdsc2/storeListInRadius'
-_TIMEOUT = 15.0
-_PAGE_DELAY = 0.15
-
-_FETCH_CACHE: dict[tuple, tuple[float, list[dict]]] = {}
-_FETCH_CACHE_TTL = 60.0
-
-
-def _api_key() -> str:
-    return get_settings().public_data_api_key
-
-
-def _cache_key(lat: float, lng: float, radius_m: int) -> tuple:
-    return (round(lat, 5), round(lng, 5), radius_m)
-
-
-async def _fetch_radius(
-    lat: float,
-    lng: float,
-    radius_m: int,
-    max_rows: int = 400,
-) -> list[dict]:
-    """반경 내 상가 목록을 소상공인공단 API로 페이징 조회한다."""
-    key = _cache_key(lat, lng, radius_m)
-    now = time.monotonic()
-
-    cached = _FETCH_CACHE.get(key)
-    if cached:
-        ts, items = cached
-        if now - ts < _FETCH_CACHE_TTL:
-            return items[:max_rows]
-
-    results: list[dict] = []
-    page = 1
-    per_page = 100
-
-    async with httpx.AsyncClient(timeout=_TIMEOUT) as client:
-        while len(results) < max_rows:
-            if page > 1:
-                await asyncio.sleep(_PAGE_DELAY)
-
-            resp = await client.get(
-                _BASE_URL,
-                params={
-                    'serviceKey': _api_key(),
-                    'pageNo': page,
-                    'numOfRows': per_page,
-                    'radius': radius_m,
-                    'cx': lng,
-                    'cy': lat,
-                    'type': 'json',
-                },
-            )
-
-            if resp.status_code == 429:
-                break
-
-            resp.raise_for_status()
-            body = resp.json().get('body', {})
-            items = body.get('items') or []
-
-            if not items:
-                break
-
-            results.extend(items)
-            total = body.get('totalCount', 0)
-
-            if len(results) >= total or len(results) >= max_rows:
-                break
-
-            page += 1
-
-    _FETCH_CACHE[key] = (now, results)
-    return results
 
 
 async def search_competitors(
-    _session,
+    db: AsyncSession,
     lat: float,
     lng: float,
     radius_m: int,
     category_filter: CategoryFilter | None = None,
     limit: int = 200,
 ) -> list[dict]:
-    """반경 내 경쟁 업소를 공공 API로 조회한다."""
-    raw = await _fetch_radius(lat, lng, radius_m, max_rows=400)
-
+    """반경 내 경쟁 업소를 geo_store PostGIS 쿼리로 조회한다."""
     same_display_name = category_filter.display_name if category_filter else ''
     similar_names = (
-        get_similar_business_tags(same_display_name)
-        if same_display_name
-        else ()
+        get_similar_business_tags(same_display_name) if same_display_name else ()
     )
-    similar_filters: list[CategoryFilter] = []
+    similar_filters: list[CategoryFilter] = [
+        f for name in similar_names if (f := get_category_filter(name)) is not None
+    ]
 
-    for name in similar_names:
-        similar_filter = get_category_filter(name)
-        if similar_filter is not None:
-            similar_filters.append(similar_filter)
-    small_codes = {
-        code
-        for item in similar_filters
-        for code in item.small_codes
-    }
+    all_small_codes: set[str] = set()
+    if category_filter:
+        all_small_codes.update(category_filter.small_codes)
+    for sf in similar_filters:
+        all_small_codes.update(sf.small_codes)
 
-    result: list[dict] = []
+    if not all_small_codes:
+        return []
 
-    for item in raw:
-        small_code = item.get('indsSclsCd', '')
-        large_code = item.get('indsLclsCd', '')
+    same_small_codes = set(category_filter.small_codes) if category_filter else set()
 
-        if small_codes:
-            if small_code not in small_codes:
-                continue
-        elif category_filter and category_filter.small_codes:
-            if small_code not in category_filter.small_codes:
-                continue
-        elif category_filter and category_filter.large_code:
-            if large_code != category_filter.large_code:
-                continue
+    result = await db.execute(
+        text("""
+            SELECT
+                id,
+                name,
+                category_small_code,
+                category_mid_name,
+                display_name,
+                address,
+                ST_Y(location::geometry) AS lat,
+                ST_X(location::geometry) AS lng
+            FROM geo_store
+            WHERE ST_DWithin(
+                location::geography,
+                ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+                :radius_m
+            )
+            AND category_small_code = ANY(:small_codes)
+            LIMIT :limit
+        """),
+        {
+            'lat': lat,
+            'lng': lng,
+            'radius_m': radius_m,
+            'small_codes': list(all_small_codes),
+            'limit': limit,
+        },
+    )
 
-        try:
-            lat_val = float(item.get('lat') or 0)
-            lng_val = float(item.get('lon') or 0)
-        except (TypeError, ValueError):
-            continue
-
-        display_name = resolve_category_display(
-            small_code,
-            item.get('indsMclsNm', ''),
+    competitors: list[dict] = []
+    for row in result:
+        small_code = row.category_small_code or ''
+        display = row.display_name or resolve_category_display(
+            small_code, row.category_mid_name or ''
         )
-
-        result.append(
+        competitors.append(
             {
-                'id': item.get('bizesId', ''),
-                'name': item.get('bizesNm', ''),
-                'lat': lat_val,
-                'lng': lng_val,
-                'type': 'same' if display_name == same_display_name else 'similar',
-                'category': display_name,
-                'address': item.get('rdnmAdr', ''),
+                'id': row.id,
+                'name': row.name or '',
+                'lat': float(row.lat) if row.lat is not None else 0.0,
+                'lng': float(row.lng) if row.lng is not None else 0.0,
+                'type': 'same' if small_code in same_small_codes else 'similar',
+                'category': display,
+                'address': row.address or '',
             }
         )
 
-        if len(result) >= limit:
-            break
-
-    return result
+    return competitors
 
 
 async def get_dong_codes_in_radius(
-    _session,
+    db: AsyncSession,
     lat: float,
     lng: float,
     radius_m: int,
 ) -> tuple[list[str], str | None]:
     """반경 내 행정동 코드 목록과 최다 업소 행정동명을 반환한다."""
-    raw = await _fetch_radius(lat, lng, radius_m, max_rows=400)
-
-    dong_count: dict[str, dict] = {}
-
-    for item in raw:
-        code = item.get('adongCd')
-        name = item.get('adongNm')
-
-        if code:
-            if code not in dong_count:
-                dong_count[code] = {'name': name, 'count': 0}
-            dong_count[code]['count'] += 1
-
-    if not dong_count:
+    result = await db.execute(
+        text("""
+            SELECT dong_code, dong_name, COUNT(*) AS cnt
+            FROM geo_store
+            WHERE ST_DWithin(
+                location::geography,
+                ST_SetSRID(ST_MakePoint(:lng, :lat), 4326)::geography,
+                :radius_m
+            )
+            AND dong_code IS NOT NULL
+            GROUP BY dong_code, dong_name
+            ORDER BY cnt DESC
+        """),
+        {'lat': lat, 'lng': lng, 'radius_m': radius_m},
+    )
+    rows = result.fetchall()
+    if not rows:
         return [], None
 
-    sorted_dongs = sorted(dong_count.items(), key=lambda x: -x[1]['count'])
-    return [code for code, _ in sorted_dongs], sorted_dongs[0][1]['name']
+    return [r.dong_code for r in rows], rows[0].dong_name
 
 
-def count_seoul_category(category_filter: CategoryFilter | None) -> int:
-    """서울 전체 업종 수를 정적 CSV 데이터로 반환한다."""
+async def count_seoul_category(
+    db: AsyncSession, category_filter: CategoryFilter | None
+) -> int:
+    """서울 전체 업종 수를 DB에서 반환한다."""
     if not category_filter:
         return 0
-
-    data = sd.get()
 
     if category_filter.small_codes:
         seen_mid: set[str] = set()
         total = 0
-
         for small_code in category_filter.small_codes:
             mid_code = small_code[:4]
-
             if mid_code not in seen_mid:
                 seen_mid.add(mid_code)
-                total += data.store_by_mid.get(mid_code, 0)
-
+                result = await db.execute(
+                    text(
+                        'SELECT SUM(store_count) AS cnt FROM store_count_by_middle WHERE middle_code = :code'
+                    ),
+                    {'code': mid_code},
+                )
+                row = result.one_or_none()
+                if row and row.cnt:
+                    total += int(row.cnt)
         return total
 
     if category_filter.large_code:
-        return data.store_by_major.get(category_filter.large_code, 0)
+        result = await db.execute(
+            text(
+                'SELECT SUM(store_count) AS cnt FROM store_count_by_major WHERE major_code = :code'
+            ),
+            {'code': category_filter.large_code},
+        )
+        row = result.one_or_none()
+        return int(row.cnt) if row and row.cnt else 0
 
     return 0
 
 
-def get_dong_name_by_code(dong_code: str) -> str | None:
+async def get_dong_name_by_code(db: AsyncSession, dong_code: str) -> str | None:
     """행정동 코드로 행정동명을 반환한다."""
-    return sd.get().dong_names.get(dong_code)
+    result = await db.execute(
+        text('SELECT dong_name FROM dong_names WHERE dong_code = :code'),
+        {'code': dong_code},
+    )
+    row = result.one_or_none()
+    return row.dong_name if row else None

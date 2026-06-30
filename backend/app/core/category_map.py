@@ -205,7 +205,9 @@ def normalize_group_name(name: str) -> str:
 
 
 def get_category_filter(name: str) -> CategoryFilter | None:
-    key = normalize_category_name(name)
+    from app.core.category_resolver import resolve_to_map_key
+
+    key = resolve_to_map_key(name)
     return _MAP.get(key)
 
 
