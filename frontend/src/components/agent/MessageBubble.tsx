@@ -88,7 +88,7 @@ export function MessageBubble({
       {showButtons && (
         <div className="mt-2 flex flex-wrap gap-2">
           {message.confirmButtons!.map((btn) => (
-            btn.action === 'open_report' ? (
+            btn.action === 'open_report' || btn.action === 'regenerate_report' ? (
               <button
                 key={btn.action}
                 type="button"
@@ -99,6 +99,16 @@ export function MessageBubble({
                 <span>📊</span>
                 <span>{btn.label}</span>
                 <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            ) : btn.action === 'dismiss_location_change' ? (
+              <button
+                key={btn.action}
+                type="button"
+                disabled={buttonsDisabled}
+                onClick={() => onConfirmAction?.(btn.action)}
+                className="flex w-fit items-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium text-muted-foreground transition-colors duration-150 hover:bg-muted hover:text-foreground disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span>{btn.label}</span>
               </button>
             ) : (
               <Button

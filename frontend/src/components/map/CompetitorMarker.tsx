@@ -12,23 +12,32 @@ const COLOR = {
 
 interface CompetitorMarkerProps {
   competitor: CompetitorItem
+  dimmed?: boolean
+  highlighted?: boolean
 }
 
-export function CompetitorMarker({ competitor: c }: CompetitorMarkerProps) {
+export function CompetitorMarker({ competitor: c, dimmed = false, highlighted = false }: CompetitorMarkerProps) {
   const [hovered, setHovered] = useState(false)
   const color = COLOR[c.type]
   const icon = getIndustryIcon(c.category ?? undefined)
+  const effectiveScale = highlighted ? 1.12 : 1
+  const effectiveOpacity = dimmed ? 0.32 : 1
 
   return (
     <CustomOverlayMap
       position={{ lat: c.lat, lng: c.lng }}
       yAnchor={0.5}
       xAnchor={0.5}
-      zIndex={hovered ? 20 : 5}
+      zIndex={hovered ? 20 : highlighted ? 12 : 5}
     >
       <div
         className="relative flex flex-col items-center"
-        style={{ cursor: 'pointer' }}
+        style={{
+          cursor: 'pointer',
+          opacity: effectiveOpacity,
+          transform: `scale(${effectiveScale})`,
+          transition: 'opacity 0.15s ease, transform 0.15s ease',
+        }}
         onMouseEnter={() => setHovered(true)}
         onMouseLeave={() => setHovered(false)}
       >

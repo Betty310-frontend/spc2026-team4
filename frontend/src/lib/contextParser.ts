@@ -16,7 +16,7 @@ export function parseContextFromToolArgs(
   toolName: string,
   args: Record<string, unknown>,
   setAnalysisContext: (ctx: Partial<AnalysisContext>) => void,
-) {
+): Partial<AnalysisContext> | null {
   if (toolName === 'search_competitors') {
     const rawCategory =
       (typeof args.category === 'string' && args.category) ||
@@ -37,13 +37,21 @@ export function parseContextFromToolArgs(
       location: rawLocation,
       radius: rawRadius,
     })
+
+    return {
+      industry: normalizeCategory(rawCategory) ?? rawCategory,
+      location: rawLocation,
+      radius: rawRadius,
+    }
   }
+
+  return null
 }
 
 export function parseContextFromAssistantText(
   text: string,
   setAnalysisContext: (ctx: Partial<AnalysisContext>) => void,
-) {
+): Partial<AnalysisContext> | null {
   const radiusMatch = extractRadiusFromText(text)
   const partial: Partial<AnalysisContext> = {}
 
@@ -53,5 +61,8 @@ export function parseContextFromAssistantText(
 
   if (Object.keys(partial).length > 0) {
     setAnalysisContext(partial)
+    return partial
   }
+
+  return null
 }

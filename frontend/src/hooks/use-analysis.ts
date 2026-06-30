@@ -3,7 +3,12 @@
 import { useCallback, useRef, useEffect } from 'react'
 import { useAnalysisContext } from '@/store/analysisContext'
 import { useAnalysisResult, abortMapUpdate } from '@/store/analysisResult'
-import { fetchCompetitors, fetchPopulation, fetchCompetitionPercentile } from '@/lib/api-client'
+import {
+  fetchCompetitors,
+  fetchPopulation,
+  fetchCompetitionPercentile,
+  fetchH3Hexagons,
+} from '@/lib/api-client'
 import { applyCompetitors, normalizeCompetitors } from '@/lib/agent-event-bridge'
 import { isValidCategory } from '@/lib/category'
 import { reverseGeocode, resolveLocationToCenter } from '@/lib/geocode'
@@ -22,13 +27,33 @@ export interface AnalysisParams {
   행정동코드?: string
 }
 
+function getH3Resolution(radiusM: number): 8 | 9 | 10 {
+  if (radiusM <= 300) return 10
+  if (radiusM <= 700) return 9
+  return 8
+}
+
+function clampH3Resolution(value: number): 7 | 8 | 9 | 10 {
+  if (value <= 7) return 7
+  if (value >= 10) return 10
+  return value as 8 | 9 | 10
+}
+
 interface UseAnalysisOptions {
   onAgentMessage?: (message: Omit<AgentMessage, 'id' | 'role'>) => void
 }
 
 export function useAnalysis(options: UseAnalysisOptions = {}) {
   const { setAnalysisContext } = useAnalysisContext()
-  const { updateMetric, setMapOptions, startLoading, stopLoading, isLoading } = useAnalysisResult()
+  const {
+    updateMetric,
+    setMapOptions,
+    setH3Hexagons,
+    setH3Resolution,
+    startLoading,
+    stopLoading,
+    isLoading,
+  } = useAnalysisResult()
   const lastParamsRef = useRef<AnalysisParams | null>(null)
   const setAnalysisContextRef = useRef(setAnalysisContext)
 
@@ -47,12 +72,16 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
       lastParamsRef.current = params
 
       if (!isValidCategory(params.업종)) {
+        setH3Hexagons([])
+        setH3Resolution(null)
         return
       }
 
       updateMetric('competitors', { status: 'loading' })
       updateMetric('population', { status: 'loading' })
       updateMetric('density', { status: 'loading' })
+      setH3Hexagons([])
+      setH3Resolution(null)
 
       startLoading('analysis')
       try {
@@ -78,48 +107,29 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
           })
         }
 
-        // Step 1: 경쟁업체 조회 (확정 좌표 사용)
-        const comp = await fetchCompetitors({
+        const geoPromise = params.행정동코드
+          ? Promise.resolve(null)
+          : reverseGeocode(resolvedCenter.lat, resolvedCenter.lng)
+
+        const h3Resolution = clampH3Resolution(getH3Resolution(params.반경 ?? 500))
+        const compPromise = fetchCompetitors({
           위치: params.위치,
           업종: params.업종,
           반경: params.반경,
           lat: resolvedCenter.lat,
           lng: resolvedCenter.lng,
+        }).then((comp) => {
+          applyCompetitors(normalizeCompetitors(comp))
+        }).catch(() => {
+          updateMetric('competitors', { status: 'error' })
         })
 
-        applyCompetitors(normalizeCompetitors(comp))
-
-        let populationDongCode = params.행정동코드 ?? null
-        if (!populationDongCode) {
-          const geoResult = await reverseGeocode(resolvedCenter.lat, resolvedCenter.lng)
-          if (geoResult?.dongCode) {
-            populationDongCode = geoResult.dongCode
-            setAnalysisContextRef.current({
-              dongCode: geoResult.dongCode,
-              fullLocationName: geoResult.fullName,
-            })
-          }
-        }
-
-        // Step 2: density + population 병렬 조회
-        const [density, pop] = await Promise.allSettled([
-          fetchCompetitionPercentile({
-            lat: resolvedCenter.lat,
-            lng: resolvedCenter.lng,
-            업종: params.업종,
-            반경: params.반경,
-          }),
-          populationDongCode
-            ? fetchPopulation({
-                행정동코드: populationDongCode,
-                업종: params.업종,
-                // 시간대: ['11'],
-              })
-            : Promise.reject(new Error('행정동코드 없음')),
-        ])
-
-        if (density.status === 'fulfilled') {
-          const d = density.value
+        const densityPromise = fetchCompetitionPercentile({
+          lat: resolvedCenter.lat,
+          lng: resolvedCenter.lng,
+          업종: params.업종,
+          반경: params.반경,
+        }).then((d) => {
           const densityBadge = d.label || getTierBadgeLabel(d.percentile) || undefined
           updateMetric('density', {
             status: d.fallback ? 'fallback' : 'done',
@@ -130,49 +140,92 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
             source: `${d.data_source} · ${d.base_date}`,
             isFallback: d.fallback,
           })
-          // 경쟁업체 카드 배지도 density 결과로 보강
           updateMetric('competitors', {
             badge: densityBadge,
             badgeTier: d.tier as 'high' | 'mid' | 'low',
           })
-        } else {
-          // 부분 에러 — 카드만 error 표시, 에이전트 메시지 없음
+        }).catch(() => {
           updateMetric('density', { status: 'error' })
-        }
+        })
 
-        if (pop.status === 'fulfilled') {
-          const p = pop.value
-          const percentile = p.percentile
-          const populationBadge = getTierBadgeLabel(percentile) || undefined
-          updateMetric('population', {
-            status: p.fallback ? 'fallback' : 'done',
-            value: p.weighted_avg == null ? '데이터 준비중' : formatPopulation(p.weighted_avg),
-            unit: p.weighted_avg == null ? '' : '명',
-            badge: populationBadge,
-            badgeTier:
-              percentile == null
-                ? undefined
-                : percentile >= 70
-                  ? 'high'
-                  : percentile >= 40
-                    ? 'mid'
-                    : 'low',
-            source: `${p.data_source} · ${p.base_date}`,
-            isFallback: p.fallback,
-            hint: p.weighted_avg == null ? '시간대별 생활인구 곡선으로 대체 판단하세요' : undefined,
+        const h3Promise = fetchH3Hexagons({
+          lat: resolvedCenter.lat,
+          lng: resolvedCenter.lng,
+          category: params.업종,
+          radius: params.반경,
+          resolution: h3Resolution,
+        }).then((hexagons) => {
+          setH3Hexagons(hexagons)
+          setH3Resolution(h3Resolution)
+        }).catch(() => {
+          setH3Hexagons([])
+          setH3Resolution(null)
+        })
+
+        geoPromise.then((geoResult) => {
+          if (!geoResult) return
+
+          if (!params.행정동코드) {
+            setAnalysisContextRef.current({
+              dongCode: geoResult.dongCode,
+              fullLocationName: geoResult.fullName,
+            })
+          } else {
+            setAnalysisContextRef.current({
+              fullLocationName: geoResult.fullName,
+            })
+          }
+        })
+
+        const populationPromise = geoPromise
+          .then((geoResult) => params.행정동코드 ?? geoResult?.dongCode ?? null)
+          .then((populationDongCode) => {
+            if (!populationDongCode) {
+              throw new Error('행정동코드 없음')
+            }
+
+            return fetchPopulation({
+              행정동코드: populationDongCode,
+              업종: params.업종,
+              // 시간대: ['11'],
+            })
           })
-        } else {
-          // 행정동코드 없으면 fallback 처리
-          updateMetric('population', {
-            status: 'fallback',
-            value: '데이터 준비중',
-            unit: '',
-            isFallback: true,
-            hint: '시간대별 생활인구 곡선으로 대체 판단하세요',
+          .then((p) => {
+            const percentile = p.percentile
+            const populationBadge = getTierBadgeLabel(percentile) || undefined
+            updateMetric('population', {
+              status: p.fallback ? 'fallback' : 'done',
+              value: p.weighted_avg == null ? '데이터 준비중' : formatPopulation(p.weighted_avg),
+              unit: p.weighted_avg == null ? '' : '명',
+              badge: populationBadge,
+              badgeTier:
+                percentile == null
+                  ? undefined
+                  : percentile >= 70
+                    ? 'high'
+                    : percentile >= 40
+                      ? 'mid'
+                      : 'low',
+              source: `${p.data_source} · ${p.base_date}`,
+              isFallback: p.fallback,
+              hint: p.weighted_avg == null ? '시간대별 생활인구 곡선으로 대체 판단하세요' : undefined,
+            })
           })
-        }
+          .catch(() => {
+            updateMetric('population', {
+              status: 'fallback',
+              value: '데이터 준비중',
+              unit: '',
+              isFallback: true,
+              hint: '시간대별 생활인구 곡선으로 대체 판단하세요',
+            })
+          })
+
+        await Promise.allSettled([compPromise, densityPromise, populationPromise, h3Promise])
       } catch (err) {
         abortMapUpdate()
+        setH3Hexagons([])
+        setH3Resolution(null)
 
         // 치명적 에러 (competitors 실패) → 에이전트 에러 메시지로 전달
         updateMetric('competitors', { status: 'error' })
@@ -189,7 +242,7 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
         stopLoading('analysis')
       }
     },
-    [startLoading, stopLoading, updateMetric],
+    [setH3Hexagons, setH3Resolution, startLoading, stopLoading, updateMetric],
   )
 
   const retry = useCallback(() => {
@@ -199,8 +252,10 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
   const reset = useCallback(() => {
     abortMapUpdate()
     setMapOptions(null)
+    setH3Hexagons([])
+    setH3Resolution(null)
     lastParamsRef.current = null
-  }, [setMapOptions])
+  }, [setH3Hexagons, setH3Resolution, setMapOptions])
 
   return { runAnalysis, isLoading, retry, reset }
 }

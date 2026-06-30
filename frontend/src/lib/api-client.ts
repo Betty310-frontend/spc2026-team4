@@ -74,14 +74,16 @@ export async function fetchCompetitionPercentile(params: {
 }
 
 export async function fetchH3Hexagons(params: {
-  station: string
+  lat: number
+  lng: number
   category: string
   radius?: number
   resolution?: number
 }): Promise<H3HexagonItem[]> {
   if (!isValidCategory(params.category)) return []
   const query = new URLSearchParams()
-  query.set('station',  params.station)
+  query.set('lat', String(params.lat))
+  query.set('lng', String(params.lng))
   query.set('category', params.category)
   if (params.radius     != null) query.set('radius',     String(params.radius))
   if (params.resolution != null) query.set('resolution', String(params.resolution))

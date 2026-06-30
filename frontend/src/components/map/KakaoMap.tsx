@@ -1,8 +1,9 @@
 'use client'
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react'
-import { Loader2 } from 'lucide-react'
+import { Loader2, Hexagon } from 'lucide-react'
 import { Circle, Map, useMap } from 'react-kakao-maps-sdk'
+import { latLngToCell } from 'h3-js'
 import useKakaoLoader from '@/hooks/use-kakao-loader'
 import { useCompetitorClusterer } from '@/hooks/use-competitor-clusterer'
 import { useAnalysisContext } from '@/store/analysisContext'
@@ -12,10 +13,11 @@ import { CandidatePin } from './CandidatePin'
 import { CompetitorMarker } from './CompetitorMarker'
 import { MapHints } from './MapHints'
 import { KakaoMapProps } from '@/types/map'
-import { CenterCoords, CompetitorItem } from '@/types/api'
+import { CenterCoords, CompetitorItem, H3HexagonItem } from '@/types/api'
 import type { AnalysisContext } from '@/types/analysis'
 import { CLUSTER_THRESHOLD, CLUSTER_MIN_LEVEL } from '@/constants/map'
 import { INDIGO, MARKER_COLORS } from '@/styles/colors'
+import { createCompetitionLayerManager } from '@/lib/competition-layer'
 
 const SEOUL_CENTER = { lat: 37.5665, lng: 126.978 }
 const KOREA_LAT_RANGE = { min: 33, max: 39 }
@@ -113,9 +115,13 @@ function ClustererLayer({
 
 function CompetitorMarkerLayer({
   competitors,
+  dimmedIds,
+  highlightedIds,
   onRendered,
 }: {
   competitors: CompetitorItem[]
+  dimmedIds: Set<string> | null
+  highlightedIds: Set<string> | null
   onRendered?: () => void
 }) {
   useEffect(() => {
@@ -146,17 +152,90 @@ function CompetitorMarkerLayer({
   return (
     <>
       {competitors.map((c) => (
-        <CompetitorMarker key={c.id} competitor={c} />
+        <CompetitorMarker
+          key={c.id}
+          competitor={c}
+          dimmed={dimmedIds != null && !dimmedIds.has(c.id)}
+          highlighted={highlightedIds?.has(c.id) ?? false}
+        />
       ))}
     </>
   )
 }
 
-export function KakaoMap({ options, userLocation, isLoading, isActive = true }: KakaoMapProps) {
+function H3HeatmapLayer({
+  hexagons,
+  visible,
+  center,
+  radiusM,
+  resolution,
+  selectedHexIndex,
+  onHexSelect,
+}: {
+  hexagons: H3HexagonItem[]
+  visible: boolean
+  center: { lat: number; lng: number }
+  radiusM: number
+  resolution: number | null
+  selectedHexIndex: string | null
+  onHexSelect: (h3Index: string | null) => void
+}) {
+  const map = useMap('H3HeatmapLayer')
+  const layerManagerRef = useRef<ReturnType<typeof createCompetitionLayerManager> | null>(null)
+
+  useEffect(() => {
+    if (!map) return
+
+    if (!layerManagerRef.current) {
+      layerManagerRef.current = createCompetitionLayerManager()
+    }
+
+    layerManagerRef.current.mount(map, {
+      onHexSelect,
+    })
+
+    return () => {
+      layerManagerRef.current?.destroy()
+      layerManagerRef.current = null
+    }
+  }, [map, onHexSelect])
+
+  useEffect(() => {
+    if (!layerManagerRef.current) return
+
+    if (!visible || !hexagons.length) {
+      layerManagerRef.current.clear()
+      return
+    }
+
+    layerManagerRef.current.render(hexagons, {
+      center,
+      radiusM,
+      resolution: resolution ?? undefined,
+      selectedHexIndex,
+    })
+
+    return () => {
+      layerManagerRef.current?.clear()
+    }
+  }, [center, hexagons, radiusM, resolution, selectedHexIndex, visible])
+
+  return null
+}
+
+export function KakaoMap({
+  options,
+  h3Hexagons = [],
+  userLocation,
+  isLoading,
+  isActive = true,
+}: KakaoMapProps) {
   const [sdkLoading] = useKakaoLoader()
   const { analysisContext, setAnalysisContext } = useAnalysisContext()
-  const { mapSync } = useAnalysisResult()
+  const { mapSync, h3Resolution } = useAnalysisResult()
   const [mapInstance, setMapInstance] = useState<kakao.maps.Map | null>(null)
+  const [heatmapVisible, setHeatmapVisible] = useState(true)
+  const [selectedHexIndex, setSelectedHexIndex] = useState<string | null>(null)
   const [dragging, setDragging] = useState(false)
   const [pendingCenter, setPendingCenter] = useState<CenterCoords | null>(null)
   const [previewCenter, setPreviewCenter] = useState<CenterCoords | null>(null)
@@ -177,6 +256,31 @@ export function KakaoMap({ options, userLocation, isLoading, isActive = true }: 
   const selectedRadius = analysisContext.radius ?? options?.radius_m ?? DEFAULT_RADIUS_M
   const radiusTiers = useMemo(() => buildRadiusTiers(selectedRadius), [selectedRadius])
   const competitorCount = options?.competitors.length ?? 0
+  const selectedCompetitorIds = useMemo(() => {
+    if (!selectedHexIndex || h3Resolution == null || !options?.competitors.length) return new Set<string>()
+
+    const ids = options.competitors
+      .filter((competitor) =>
+        latLngToCell(competitor.lat, competitor.lng, h3Resolution) === selectedHexIndex,
+      )
+      .map((competitor) => competitor.id)
+
+    return new Set(ids)
+  }, [h3Resolution, options?.competitors, selectedHexIndex])
+  const selectedHexCount =
+    selectedHexIndex == null
+      ? null
+      : h3Hexagons.find((hex) => hex.h3Index === selectedHexIndex)?.count ?? 0
+
+  useEffect(() => {
+    if (!heatmapVisible) {
+      setSelectedHexIndex(null)
+    }
+  }, [heatmapVisible])
+
+  useEffect(() => {
+    setSelectedHexIndex(null)
+  }, [h3Resolution, h3Hexagons])
 
   // 현재 지도 레벨 — 클러스터/개별 모드 전환 판단
   // onZoomChanged가 Map의 level prop 변경 시에도 발생하므로 별도 리셋 불필요
@@ -187,11 +291,15 @@ export function KakaoMap({ options, userLocation, isLoading, isActive = true }: 
 
   // 클러스터 모드: 마커 50개 이상 AND 레벨이 CLUSTER_MIN_LEVEL 초과
   // 개별 모드: !clusterMode — 두 모드가 절대 동시에 활성화되지 않음
-  const clusterMode = needsCluster && currentLevel > CLUSTER_MIN_LEVEL
+  const clusterMode = needsCluster && currentLevel > CLUSTER_MIN_LEVEL && !selectedHexIndex
   const individualMode = !clusterMode
 
   const handleZoomChanged = useCallback((target: kakao.maps.Map) => {
     setCurrentLevel(target.getLevel())
+  }, [])
+
+  const clearHexSelection = useCallback(() => {
+    setSelectedHexIndex(null)
   }, [])
 
   const handleMapRendered = useCallback(() => {
@@ -320,6 +428,20 @@ export function KakaoMap({ options, userLocation, isLoading, isActive = true }: 
     }
   }, [])
 
+  useEffect(() => {
+    if (!mapInstance || !window.kakao?.maps?.event) return
+
+    const handleMapClick = () => {
+      clearHexSelection()
+    }
+
+    window.kakao.maps.event.addListener(mapInstance, 'click', handleMapClick)
+
+    return () => {
+      window.kakao.maps.event.removeListener(mapInstance, 'click', handleMapClick)
+    }
+  }, [clearHexSelection, mapInstance])
+
   const handleRadiusCircleClick = useCallback(
     (radius: number) => {
       setAnalysisContext({ radius })
@@ -374,7 +496,7 @@ export function KakaoMap({ options, userLocation, isLoading, isActive = true }: 
       dragEndTimerRef.current = null
     }
 
-    const origin = committedCenterRef.current
+    const origin = currentCenter
     dragOriginRef.current = origin
     dragOriginContextRef.current = {
       center: analysisContextRef.current.center,
@@ -387,7 +509,7 @@ export function KakaoMap({ options, userLocation, isLoading, isActive = true }: 
     setPreviewCenter(origin)
     syncOverlays(origin)
     marker.setPosition(toLatLng(origin))
-  }, [syncOverlays])
+  }, [currentCenter, syncOverlays])
 
   const commitCenterChange = useCallback(
     async (center: CenterCoords) => {
@@ -410,6 +532,7 @@ export function KakaoMap({ options, userLocation, isLoading, isActive = true }: 
         beginMapUpdate('pin-move')
         setAnalysisContext({
           center,
+          industry: null,
           location: null,
           dongCode: null,
           fullLocationName: null,
@@ -427,9 +550,17 @@ export function KakaoMap({ options, userLocation, isLoading, isActive = true }: 
 
         setAnalysisContext({
           center,
+          industry: null,
           location: geoResult.dongName,
           dongCode: geoResult.dongCode,
           fullLocationName: geoResult.fullName,
+        })
+        committedCenterRef.current = center
+        setPendingCenter(null)
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => {
+            setPreviewCenter(null)
+          })
         })
       } catch (error) {
         console.error('[map:pin-move] 지역 재확인 실패', error)
@@ -534,7 +665,21 @@ export function KakaoMap({ options, userLocation, isLoading, isActive = true }: 
             {individualMode && (
               <CompetitorMarkerLayer
                 competitors={options.competitors}
+                dimmedIds={selectedHexIndex ? selectedCompetitorIds : null}
+                highlightedIds={selectedHexIndex ? selectedCompetitorIds : null}
                 onRendered={handleMapRendered}
+              />
+            )}
+
+            {heatmapVisible && (
+              <H3HeatmapLayer
+                hexagons={h3Hexagons}
+                visible={heatmapVisible}
+                center={currentCenter}
+                radiusM={selectedRadius}
+                resolution={h3Resolution}
+                selectedHexIndex={selectedHexIndex}
+                onHexSelect={setSelectedHexIndex}
               />
             )}
           </>
@@ -571,6 +716,45 @@ export function KakaoMap({ options, userLocation, isLoading, isActive = true }: 
       {/* 범례 */}
       {!sdkLoading && options && !isLoading && !mapSync.pending && (
         <div className="absolute top-2 right-2 z-10 flex flex-col gap-1.5">
+          <button
+            type="button"
+            onClick={() => setHeatmapVisible((prev) => !prev)}
+            className={[
+              'border-border bg-background/90 flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[10px] font-medium shadow-sm backdrop-blur-sm transition-colors',
+              heatmapVisible
+                ? 'text-blue-700'
+                : 'text-muted-foreground hover:text-foreground',
+            ].join(' ')}
+          >
+            <Hexagon className="h-3 w-3" />
+            <span>{heatmapVisible ? '히트맵 숨기기' : '히트맵 보기'}</span>
+          </button>
+          {selectedHexIndex && (
+            <div className="border-border bg-background/90 flex items-center justify-between gap-2 rounded-md border px-2.5 py-1.5 shadow-sm backdrop-blur-sm">
+              <div className="flex flex-col">
+                <span className="text-[10px] font-medium text-muted-foreground">선택 블록</span>
+                <span className="text-[10px] font-semibold text-foreground">
+                  {selectedHexCount == null
+                    ? '선택 중'
+                    : selectedHexCount > 0
+                      ? `경쟁업체 ${selectedHexCount}곳`
+                      : '경쟁업체 없음'}
+                </span>
+                {selectedHexCount === 0 && (
+                  <span className="mt-0.5 text-[10px] leading-tight text-blue-700">
+                    이 블록은 동일 업종 데이터가 없습니다. 유동인구 등 다른 지표와 함께 검토하세요.
+                  </span>
+                )}
+              </div>
+              <button
+                type="button"
+                onClick={clearHexSelection}
+                className="text-[10px] font-medium text-blue-700 hover:underline"
+              >
+                필터 해제
+              </button>
+            </div>
+          )}
           <div className="border-border bg-background/90 rounded-md border px-2.5 py-1.5 text-[10px] font-medium shadow-sm backdrop-blur-sm">
             <span className="text-muted-foreground">선택 반경</span>
             <span className="text-foreground ml-1">{selectedRadius}m</span>
@@ -579,6 +763,14 @@ export function KakaoMap({ options, userLocation, isLoading, isActive = true }: 
             <LegendItem color={MARKER_COLORS.candidate} label="내 후보지" />
             <LegendItem color={MARKER_COLORS.same} label="동일 업종" />
             <LegendItem color={MARKER_COLORS.similar} label="유사 업종" />
+            <HeatLegendItem color="#DBEAFE" label="추천 후보 블록" />
+          </div>
+          <div className="border-border bg-background/90 flex flex-col gap-1.5 rounded-md border px-2.5 py-2 shadow-sm backdrop-blur-sm">
+            <div className="text-muted-foreground text-[10px] font-medium">히트맵 범례</div>
+            <HeatLegendItem color="#10B981" label="낮음" />
+            <HeatLegendItem color="#FACC15" label="보통" />
+            <HeatLegendItem color="#F59E0B" label="높음" />
+            <HeatLegendItem color="#EF4444" label="매우 높음" />
           </div>
         </div>
       )}
@@ -590,6 +782,15 @@ function LegendItem({ color, label }: { color: string; label: string }) {
   return (
     <div className="flex items-center gap-1.5">
       <span className="h-2 w-2 flex-shrink-0 rounded-full" style={{ background: color }} />
+      <span className="text-muted-foreground text-[10px]">{label}</span>
+    </div>
+  )
+}
+
+function HeatLegendItem({ color, label }: { color: string; label: string }) {
+  return (
+    <div className="flex items-center gap-1.5">
+      <span className="h-2.5 w-2.5 flex-shrink-0 rounded-[2px]" style={{ background: color }} />
       <span className="text-muted-foreground text-[10px]">{label}</span>
     </div>
   )

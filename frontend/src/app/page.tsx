@@ -11,7 +11,7 @@ import { KakaoMap } from '@/components/map/KakaoMap'
 
 export default function Home() {
   // mapOptions는 useAnalysis → setMapOptions → 스토어에서 공유
-  const { mapOptions, isLoading } = useAnalysisResult()
+  const { mapOptions, h3Hexagons, isLoading } = useAnalysisResult()
   const { analysisContext } = useAnalysisContext()
   const [activeTab, setActiveTab] = useState<'map' | 'report'>('map')
   const [reportBadgeVisible, setReportBadgeVisible] = useState(false)
@@ -28,6 +28,7 @@ export default function Home() {
               <div className="min-h-0 flex-1">
                 <KakaoMap
                   options={mapOptions}
+                  h3Hexagons={h3Hexagons}
                   userLocation={analysisContext.userLocation}
                   isLoading={isLoading}
                   isActive={isActive}
