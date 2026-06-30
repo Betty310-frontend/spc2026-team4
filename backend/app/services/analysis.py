@@ -9,6 +9,7 @@ from app.core.analysis_utils import (
     build_h3_hexagons,
     calc_competition_percentile,
     calc_percentile,
+    hex_coverage_m,
 )
 from app.core.cache import cache_or_compute
 from app.core.cache_keys import (
@@ -446,28 +447,25 @@ async def run_competition_percentile(
 async def run_h3_hexagons(
     db: AsyncSession,
     redis: Redis,
-    station: str,
+    lat: float,
+    lng: float,
     category: str,
     radius: int = 500,
-    resolution: int = 8,
+    resolution: int = 9,
 ) -> list[dict]:
     """H3 헥사곤 집계 — REST /h3-hexagons 엔드포인트 전용."""
     cat_filter = get_category_filter(category)
     cache_category = cat_filter.display_name if cat_filter else category
-    coords = await geocode_station(station, get_settings().kakao_rest_api_key, redis)
-    if coords.get('geocode_failed'):
-        return []
-    geohash_str = encode_geohash(coords['lat'], coords['lng'], precision=7)
+    geohash_str = encode_geohash(lat, lng, precision=7)
     cache_key = h3_hexagons_key(cache_category, geohash_str, radius, resolution)
 
     async def _compute() -> list[dict]:
-        competitors = await db_search_competitors(
-            db, coords['lat'], coords['lng'], radius, cat_filter
-        )
+        coverage = hex_coverage_m(radius)
+        competitors = await db_search_competitors(db, lat, lng, coverage, cat_filter)
         return build_h3_hexagons(
             competitors,
-            center_lat=coords['lat'],
-            center_lng=coords['lng'],
+            center_lat=lat,
+            center_lng=lng,
             radius_m=radius,
             resolution=resolution,
         )

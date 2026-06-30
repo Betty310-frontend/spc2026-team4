@@ -35,6 +35,11 @@ def calc_percentile(value: float, reference_values: list[float]) -> int:
     return round(rank / len(reference_values) * 100)
 
 
+def hex_coverage_m(radius_m: int) -> int:
+    """h3 헥사곤 커버리지 반경 — build_h3_hexagons()와 동일 공식."""
+    return max(700, min(radius_m * 2, 1200))
+
+
 def build_h3_hexagons(
     competitors: list[dict],
     center_lat: float,
@@ -47,7 +52,7 @@ def build_h3_hexagons(
     빈 셀(count=0)도 포함해 항상 일정 수의 헥사곤을 반환한다.
     커버리지 반경은 radius_m × 2로 확장해 지도 절반 정도를 채운다.
     """
-    coverage_m = max(700, min(radius_m * 2, 1200))
+    coverage_m = hex_coverage_m(radius_m)
     deg_per_m_lat = 1 / 111320
     deg_per_m_lng = 1 / (111320 * math.cos(math.radians(center_lat)))
     n = 64
