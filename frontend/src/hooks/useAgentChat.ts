@@ -6,7 +6,7 @@ import { UIMessage } from 'ai'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useAnalysisContext } from '@/store/analysisContext'
 
-import { useAnalysisResult, abortMapUpdate } from '@/store/analysisResult'
+import { useAnalysisResult, abortMapUpdate, requestReportRefresh } from '@/store/analysisResult'
 import { convertToChatMessages } from '@/lib/messageConverter'
 import { handleToolResult } from '@/lib/toolResultParser'
 import {
@@ -70,11 +70,28 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
           dataPartAny.data.tool === 'search_competitors' &&
           isRecord(dataPartAny.data.input)
         ) {
-          parseContextFromToolArgs(
+          setAnalysisContext({
+            center: null,
+            dongCode: null,
+            fullLocationName: null,
+          })
+          analysisContextRef.current = {
+            ...analysisContextRef.current,
+            center: null,
+            dongCode: null,
+            fullLocationName: null,
+          }
+          const parsedContext = parseContextFromToolArgs(
             'search_competitors',
             dataPartAny.data.input,
             setAnalysisContext,
           )
+          if (parsedContext) {
+            analysisContextRef.current = {
+              ...analysisContextRef.current,
+              ...parsedContext,
+            }
+          }
         } else if (
           dataPartAny.type === 'data-map' &&
           isRecord(dataPartAny.data)
@@ -86,12 +103,24 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
               }
             : null
 
-          if (center?.lat != null && center?.lng != null && analysisContextRef.current.center == null) {
-            setAnalysisContext({ center: { lat: center.lat, lng: center.lng } })
-          }
-
           if (typeof dataPartAny.data.dong_name === 'string' && dataPartAny.data.dong_name) {
-            setAnalysisContext({ location: dataPartAny.data.dong_name })
+            setAnalysisContext({
+              location: dataPartAny.data.dong_name,
+              dongCode: null,
+              fullLocationName: null,
+              ...(center?.lat != null && center?.lng != null
+                ? { center: { lat: center.lat, lng: center.lng } }
+                : {}),
+            })
+            analysisContextRef.current = {
+              ...analysisContextRef.current,
+              location: dataPartAny.data.dong_name,
+              dongCode: null,
+              fullLocationName: null,
+              ...(center?.lat != null && center?.lng != null
+                ? { center: { lat: center.lat, lng: center.lng } }
+                : {}),
+            }
           }
         }
         return
@@ -140,11 +169,17 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
           handleToolResult(toolName, p.output, updateMetric, setReportData)
 
           // TODO: 에이전트 onFinish 콜백에서 파싱 결과를 setAnalysisContext로 주입
-          parseContextFromToolArgs(
+          const parsedContext = parseContextFromToolArgs(
             toolName,
             p.input as Record<string, unknown>,
             setAnalysisContext,
           )
+          if (parsedContext) {
+            analysisContextRef.current = {
+              ...analysisContextRef.current,
+              ...parsedContext,
+            }
+          }
         }
       }
 
@@ -159,7 +194,20 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
         // TODO: 재요청 로직 (최대 1회, 무한루프 방지)
       }
 
-      parseContextFromAssistantText(textContent, setAnalysisContext)
+      const assistantContext = parseContextFromAssistantText(textContent, setAnalysisContext)
+      if (assistantContext) {
+        analysisContextRef.current = {
+          ...analysisContextRef.current,
+          ...assistantContext,
+        }
+      }
+      requestReportRefresh({
+        위치: analysisContextRef.current.location ?? '',
+        업종: analysisContextRef.current.industry ?? '',
+        반경: analysisContextRef.current.radius ?? undefined,
+        lat: analysisContextRef.current.center?.lat ?? undefined,
+        lng: analysisContextRef.current.center?.lng ?? undefined,
+      })
     },
 
     onError(error: Error) {

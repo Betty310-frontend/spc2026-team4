@@ -1,7 +1,7 @@
 'use client'
 
 import { createContext, useContext, useEffect, useMemo, useReducer } from 'react'
-import type { MapOptions } from '@/types/api'
+import type { H3HexagonItem, MapOptions } from '@/types/api'
 import type { NormalizedCompetitors } from '@/lib/agent-event-bridge'
 import type { ReportResponse } from '@/types/report'
 import { formatNumber } from '@/lib/number-format'
@@ -21,12 +21,24 @@ export interface MetricCard {
 
 export type ReportData = ReportResponse
 
+export interface ReportRequestSnapshot {
+  위치: string
+  업종: string
+  반경?: number
+  lat?: number
+  lng?: number
+}
+
 export interface AnalysisResult {
   competitors: MetricCard
   density: MetricCard
   population: MetricCard
   report: ReportData | null
+  reportRequestToken: number
+  reportRequestSnapshot: ReportRequestSnapshot | null
   mapOptions: MapOptions | null
+  h3Hexagons: H3HexagonItem[]
+  h3Resolution: number | null
   mapSync: MapSync
   loadingKeys: Set<LoadingKey>
   isLoading: boolean
@@ -51,7 +63,10 @@ export type LoadingKey =
 type Action =
   | { type: 'UPDATE_METRIC'; key: MetricKey; data: Partial<MetricCard> }
   | { type: 'SET_REPORT'; report: ReportData | null }
+  | { type: 'REQUEST_REPORT_REFRESH'; snapshot?: ReportRequestSnapshot }
   | { type: 'SET_MAP_OPTIONS'; mapOptions: MapOptions | null }
+  | { type: 'SET_H3_HEXAGONS'; h3Hexagons: H3HexagonItem[] }
+  | { type: 'SET_H3_RESOLUTION'; h3Resolution: number | null }
   | { type: 'BEGIN_MAP_UPDATE'; reason?: string }
   | { type: 'COMPLETE_MAP_UPDATE'; token: number }
   | { type: 'ABORT_MAP_UPDATE'; token?: number }
@@ -65,7 +80,11 @@ const defaultResult: AnalysisResult = {
   density: { status: 'idle' },
   population: { status: 'idle' },
   report: null,
+  reportRequestToken: 0,
+  reportRequestSnapshot: null,
   mapOptions: null,
+  h3Hexagons: [],
+  h3Resolution: null,
   mapSync: { token: 0, pending: false },
   loadingKeys: new Set<LoadingKey>(),
   isLoading: false,
@@ -77,8 +96,18 @@ function reducer(state: AnalysisResult, action: Action): AnalysisResult {
       return { ...state, [action.key]: { ...state[action.key], ...action.data } }
     case 'SET_REPORT':
       return { ...state, report: action.report }
+    case 'REQUEST_REPORT_REFRESH':
+      return {
+        ...state,
+        reportRequestToken: state.reportRequestToken + 1,
+        reportRequestSnapshot: action.snapshot ?? state.reportRequestSnapshot,
+      }
     case 'SET_MAP_OPTIONS':
       return { ...state, mapOptions: action.mapOptions }
+    case 'SET_H3_HEXAGONS':
+      return { ...state, h3Hexagons: action.h3Hexagons }
+    case 'SET_H3_RESOLUTION':
+      return { ...state, h3Resolution: action.h3Resolution }
     case 'BEGIN_MAP_UPDATE':
       return {
         ...state,
@@ -121,7 +150,10 @@ function reducer(state: AnalysisResult, action: Action): AnalysisResult {
 interface AnalysisResultContextValue extends AnalysisResult {
   updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
   setReportData: (report: ReportData | null) => void
+  requestReportRefresh: (snapshot?: ReportRequestSnapshot) => void
   setMapOptions: (mapOptions: MapOptions | null) => void
+  setH3Hexagons: (h3Hexagons: H3HexagonItem[]) => void
+  setH3Resolution: (h3Resolution: number | null) => void
   startLoading: (key: LoadingKey) => void
   stopLoading: (key: LoadingKey) => void
   beginMapUpdate: (reason?: string) => void
@@ -137,7 +169,10 @@ const AnalysisResultCtx = createContext<AnalysisResultContextValue | null>(null)
 type AnalysisResultActions = {
   updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
   setReportData: (report: ReportData | null) => void
+  requestReportRefresh: (snapshot?: ReportRequestSnapshot) => void
   setMapOptions: (mapOptions: MapOptions | null) => void
+  setH3Hexagons: (h3Hexagons: H3HexagonItem[]) => void
+  setH3Resolution: (h3Resolution: number | null) => void
   startLoading: (key: LoadingKey) => void
   stopLoading: (key: LoadingKey) => void
   beginMapUpdate: (reason?: string) => void
@@ -156,6 +191,10 @@ export function applyCompetitorsFromRest(payload: NormalizedCompetitors): void {
 
 export function beginMapUpdate(reason?: string): void {
   analysisResultActions?.beginMapUpdate(reason)
+}
+
+export function requestReportRefresh(snapshot?: ReportRequestSnapshot): void {
+  analysisResultActions?.requestReportRefresh(snapshot)
 }
 
 export function startLoading(key: LoadingKey): void {
@@ -185,8 +224,14 @@ export function AnalysisResultProvider({ children }: { children: React.ReactNode
       updateMetric: (key: MetricKey, data: Partial<MetricCard>) =>
         dispatch({ type: 'UPDATE_METRIC', key, data }),
       setReportData: (report: ReportData | null) => dispatch({ type: 'SET_REPORT', report }),
+      requestReportRefresh: (snapshot?: ReportRequestSnapshot) =>
+        dispatch({ type: 'REQUEST_REPORT_REFRESH', snapshot }),
       setMapOptions: (mapOptions: MapOptions | null) =>
         dispatch({ type: 'SET_MAP_OPTIONS', mapOptions }),
+      setH3Hexagons: (h3Hexagons: H3HexagonItem[]) =>
+        dispatch({ type: 'SET_H3_HEXAGONS', h3Hexagons }),
+      setH3Resolution: (h3Resolution: number | null) =>
+        dispatch({ type: 'SET_H3_RESOLUTION', h3Resolution }),
       beginMapUpdate: (reason?: string) => dispatch({ type: 'BEGIN_MAP_UPDATE', reason }),
       completeMapUpdate: (token: number) => dispatch({ type: 'COMPLETE_MAP_UPDATE', token }),
       abortMapUpdate: (token?: number) => dispatch({ type: 'ABORT_MAP_UPDATE', token }),

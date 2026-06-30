@@ -260,12 +260,25 @@ function ReportSectionBody({
   isActive: boolean
 }) {
   const { analysisContext } = useAnalysisContext()
-  const { setReportData } = useAnalysisResult()
+  const {
+    reportRequestToken,
+    reportRequestSnapshot,
+    setReportData,
+  } = useAnalysisResult()
   const [report, setReport] = useState<ReportResponse | null>(null)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [checked, setChecked] = useState<Record<number, boolean>>({})
   const [isExportingPdf, setIsExportingPdf] = useState(false)
+  const lastFetchedTokenRef = useRef<number>(-1)
+  const latestQueryKeyRef = useRef(queryKey)
+  const latestReportRequestRef = useRef({
+    위치: analysisContext.location ?? '',
+    업종: analysisContext.industry ?? '',
+    반경: analysisContext.radius ?? undefined,
+    lat: analysisContext.center?.lat ?? undefined,
+    lng: analysisContext.center?.lng ?? undefined,
+  })
   const summarySectionRef = useRef<HTMLDivElement>(null)
   const insightsSectionRef = useRef<HTMLDivElement>(null)
   const plannerSectionRef = useRef<HTMLDivElement>(null)
@@ -278,24 +291,38 @@ function ReportSectionBody({
   const sourcesSectionRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
+    latestQueryKeyRef.current = queryKey
+  }, [queryKey])
+
+  useEffect(() => {
+    latestReportRequestRef.current = {
+      위치: analysisContext.location ?? '',
+      업종: analysisContext.industry ?? '',
+      반경: analysisContext.radius ?? undefined,
+      lat: analysisContext.center?.lat ?? undefined,
+      lng: analysisContext.center?.lng ?? undefined,
+    }
+  }, [
+    analysisContext.center?.lat,
+    analysisContext.center?.lng,
+    analysisContext.industry,
+    analysisContext.location,
+    analysisContext.radius,
+  ])
+
+  useEffect(() => {
     let cancelled = false
 
-    if (!canFetch) {
-      setReportData(null)
+    if (!canFetch || reportRequestToken === lastFetchedTokenRef.current) {
       return
     }
 
+    lastFetchedTokenRef.current = reportRequestToken
     const timer = window.setTimeout(() => {
       setLoading(true)
       setError(null)
 
-      void fetchReport({
-        위치: analysisContext.location ?? '',
-        업종: analysisContext.industry ?? '',
-        반경: analysisContext.radius ?? undefined,
-        lat: analysisContext.center?.lat ?? undefined,
-        lng: analysisContext.center?.lng ?? undefined,
-      })
+      void fetchReport(reportRequestSnapshot ?? latestReportRequestRef.current)
         .then((data) => {
           if (cancelled) return
           setReport(data)
@@ -319,12 +346,8 @@ function ReportSectionBody({
     }
   }, [
     canFetch,
-    queryKey,
-    analysisContext.center?.lat,
-    analysisContext.center?.lng,
-    analysisContext.industry,
-    analysisContext.location,
-    analysisContext.radius,
+    reportRequestSnapshot,
+    reportRequestToken,
     setReportData,
   ])
 
@@ -353,10 +376,12 @@ function ReportSectionBody({
         ],
         meta: report.meta,
       })
-    } finally {
-      setIsExportingPdf(false)
-    }
+  } finally {
+    setIsExportingPdf(false)
   }
+}
+
+  const reportData = report as ReportResponse
 
   const weekdayWeekend = report?.sales.weekday_weekend_ratio
   const peakSlot = report?.sales.peak_slot
@@ -368,13 +393,13 @@ function ReportSectionBody({
   const weekdayWeekendData = report?.charts.weekday_weekend_sales ?? []
   const dominantGenderInsight = getDominantGenderInsight(genderPieData)
   const peakRange = peakSlot ? parseSlotRange(peakSlot) : null
-  const competitionTone = report
-    ? getCompetitionChipTone(report.competition.competition_percentile)
+  const competitionTone = reportData
+    ? getCompetitionChipTone(reportData.competition.competition_percentile)
     : null
-  const competitionSummaryTone = report
-    ? report.competition.competition_percentile >= 67
+  const competitionSummaryTone = reportData
+    ? reportData.competition.competition_percentile >= 67
       ? 'danger'
-      : report.competition.competition_percentile >= 34
+      : reportData.competition.competition_percentile >= 34
         ? 'warn'
         : 'safe'
     : 'info'
@@ -386,17 +411,16 @@ function ReportSectionBody({
     if (ratio >= 1.5) return 'warn' as const
     return 'safe' as const
   })()
-
-  const swotItems = report
+  const swotItems = reportData
     ? [
-        { label: '강점' as const, icon: '🟢', items: report.swot.강점 },
-        { label: '약점' as const, icon: '🔴', items: report.swot.약점 },
-        { label: '기회' as const, icon: '🟢', items: report.swot.기회 },
-        { label: '위협' as const, icon: '🟠', items: report.swot.위협 },
+        { label: '강점' as const, icon: '🟢', items: reportData.swot.강점 },
+        { label: '약점' as const, icon: '🔴', items: reportData.swot.약점 },
+        { label: '기회' as const, icon: '🟢', items: reportData.swot.기회 },
+        { label: '위협' as const, icon: '🟠', items: reportData.swot.위협 },
       ]
     : []
 
-  if (!canFetch) {
+  if (!canFetch && !report) {
     return (
       <section className="mt-2">
         <Card className="border-border/70 bg-white shadow-sm">
@@ -420,7 +444,7 @@ function ReportSectionBody({
     )
   }
 
-  if (loading || !report) {
+  if (loading || (!report && canFetch)) {
     return (
       <section className="mt-2">
         <div className="mb-2 flex items-center justify-between px-1">
@@ -445,7 +469,7 @@ function ReportSectionBody({
     )
   }
 
-  const forbidden = report.forbidden_violated
+  const forbidden = reportData.forbidden_violated
   const mask = (text: string) => maskForbiddenText(text, forbidden)
 
   return (
@@ -487,7 +511,7 @@ function ReportSectionBody({
               <div className="min-w-0 pr-2">
                 <p className="text-muted-foreground text-xs font-semibold">핵심 요약</p>
                 <h3 className="text-foreground text-sm font-semibold">
-                  {mask(report.risk_summary)}
+                  {mask(reportData.risk_summary)}
                 </h3>
               </div>
               {competitionTone && (
@@ -500,9 +524,9 @@ function ReportSectionBody({
             </div>
 
             <div className="grid gap-3 md:grid-cols-4">
-              <SummaryChip
+                <SummaryChip
                 label="경쟁 수준"
-                value={report.competition.percentile_label}
+                value={reportData.competition.percentile_label}
                 tone={competitionSummaryTone}
               />
               <SummaryChip
@@ -539,7 +563,7 @@ function ReportSectionBody({
             <p className="text-sm font-semibold text-gray-700">차트 전에 먼저 읽는 핵심 해석</p>
           </div>
           <ul className="grid gap-1.5">
-            {report.insights.map((item, index) => (
+            {reportData.insights.map((item, index) => (
               (() => {
                 const tone = getInsightTone(item)
                 return (
@@ -803,7 +827,7 @@ function ReportSectionBody({
             </div>
             <div className="w-full rounded-2xl border border-[#BFDBFE] bg-[#EFF6FF] px-3 py-3 text-left text-sm text-[#1E3A8A]">
               <ul className="space-y-2">
-                {report.strategy.map((item, index) => (
+                {reportData.strategy.map((item, index) => (
                   <li key={`strategy-${index}`} className="pl-4 leading-relaxed">
                     {mask(item)}
                   </li>
@@ -851,7 +875,7 @@ function ReportSectionBody({
               <p className="text-xs text-foreground">분석 기준 및 제공 기관</p>
             </div>
             <div className="space-y-1.5">
-              {report.meta.data_sources.map((source) => (
+              {reportData.meta.data_sources.map((source) => (
                 <a
                   key={`${source.provider}-${source.label}`}
                   href={source.url}
@@ -870,7 +894,7 @@ function ReportSectionBody({
               ))}
             </div>
             <div className="bg-muted/50 rounded-lg px-2.5 py-1.5 text-[10px] text-muted-foreground">
-              데이터 기준일: {report.meta.generated_at}
+              데이터 기준일: {reportData.meta.generated_at}
             </div>
           </CardContent>
         </Card>
@@ -902,9 +926,7 @@ export function ReportSection({ isActive = true }: { isActive?: boolean }) {
     canFetch,
   ])
 
-  return (
-    <ReportSectionBody key={queryKey} canFetch={canFetch} queryKey={queryKey} isActive={isActive} />
-  )
+  return <ReportSectionBody canFetch={canFetch} queryKey={queryKey} isActive={isActive} />
 }
 
 function SummaryChip({

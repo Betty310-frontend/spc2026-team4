@@ -1,9 +1,12 @@
 'use client'
 
+import { useMemo } from 'react'
+import { latLngToCell } from 'h3-js'
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAnalysisResult, type MetricCard } from '@/store/analysisResult'
+import { useAnalysisContext } from '@/store/analysisContext'
 import { getMetricBadgeColor } from '@/lib/metric-badge'
 import { Info } from 'lucide-react'
 
@@ -141,34 +144,57 @@ function MetricValue({
 
 export function MetricCards() {
   const result = useAnalysisResult()
+  const { analysisContext } = useAnalysisContext()
+  const currentHexCount = useMemo(() => {
+    const center = analysisContext.center
+    const resolution = result.h3Resolution
+    if (!center || resolution == null || !result.h3Hexagons.length) return null
+
+    const currentHexIndex = latLngToCell(center.lat, center.lng, resolution)
+    const currentHex = result.h3Hexagons.find((hex) => hex.h3Index === currentHexIndex)
+    return currentHex?.count ?? 0
+  }, [analysisContext.center, result.h3Hexagons, result.h3Resolution])
 
   return (
-    <div className="grid grid-cols-3 gap-2">
-      {METRIC_ORDER.map((key) => {
-        const meta = METRIC_META[key]
-        const card = result[key]
+    <div className="space-y-2">
+      {currentHexCount != null && (
+        <div className="flex items-center justify-between rounded-lg border border-blue-200 bg-blue-50 px-3 py-2 text-xs shadow-sm">
+          <span className="font-medium text-blue-700">내 위치 블록 경쟁</span>
+          <span className="font-semibold text-blue-900">
+            {currentHexCount > 0
+              ? `경쟁 ${currentHexCount}곳`
+              : '경쟁 없음 (인접 블록 확인 필요)'}
+          </span>
+        </div>
+      )}
 
-        return (
-          <Card
-            key={key}
-            size="sm"
-            className="relative overflow-hidden border-border/70 bg-gradient-to-br from-white to-muted/30 shadow-sm"
-          >
-            <div className="absolute inset-x-0 top-0 h-1" style={{ background: meta.accent }} />
-            <CardContent className="px-3 py-2.5">
-              <div className="flex items-start justify-between gap-2">
-                <p className="text-xs font-medium text-muted-foreground">{meta.label}</p>
-              </div>
-              <MetricValue
-                card={card}
-                unit={meta.unit}
-                tone={meta.valueTone}
-                badgeDirection={meta.badgeDirection}
-              />
-            </CardContent>
-          </Card>
-        )
-      })}
+      <div className="grid grid-cols-3 gap-2">
+        {METRIC_ORDER.map((key) => {
+          const meta = METRIC_META[key]
+          const card = result[key]
+
+          return (
+            <Card
+              key={key}
+              size="sm"
+              className="relative overflow-hidden border-border/70 bg-gradient-to-br from-white to-muted/30 shadow-sm"
+            >
+              <div className="absolute inset-x-0 top-0 h-1" style={{ background: meta.accent }} />
+              <CardContent className="px-3 py-2.5">
+                <div className="flex items-start justify-between gap-2">
+                  <p className="text-xs font-medium text-muted-foreground">{meta.label}</p>
+                </div>
+                <MetricValue
+                  card={card}
+                  unit={meta.unit}
+                  tone={meta.valueTone}
+                  badgeDirection={meta.badgeDirection}
+                />
+              </CardContent>
+            </Card>
+          )
+        })}
+      </div>
     </div>
   )
 }
