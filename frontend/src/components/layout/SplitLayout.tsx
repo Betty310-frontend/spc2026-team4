@@ -59,20 +59,20 @@ export default function SplitLayout({ left, right, showDisclaimer = false }: Spl
   }, [handleMouseMove, handleMouseUp])
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-white">
+    <div className="flex h-full min-h-screen flex-col overflow-hidden bg-white">
       <Topbar />
 
       <div
         ref={containerRef}
-        className="flex flex-1 flex-col-reverse overflow-hidden md:flex-row"
+        className="flex h-full min-h-0 flex-1 flex-col-reverse overflow-hidden md:flex-row"
         style={{ visibility: leftWidth == null ? 'hidden' : 'visible' }}
       >
         {/* 좌측 패널 */}
         <div
-          className="min-h-[40vh] flex-shrink-0 overflow-y-auto md:min-h-0"
+          className="flex min-h-0 flex-1 flex-col overflow-hidden md:min-w-0"
           style={{
             width: leftWidth != null ? `${leftWidth}px` : undefined,
-            flex: leftWidth == null ? '1' : undefined,
+            flex: leftWidth == null ? '1 1 0%' : undefined,
           }}
         >
           {left}
@@ -85,8 +85,7 @@ export default function SplitLayout({ left, right, showDisclaimer = false }: Spl
 
         {/* 우측 에이전트 패널 */}
         <div
-          className="flex min-h-[45vh] flex-1 flex-col overflow-hidden md:min-h-0"
-          style={{ minWidth: `${RIGHT_PANEL_MIN}px` }}
+          className="flex h-full min-h-0 w-[280px] flex-shrink-0 flex-col overflow-hidden md:min-h-0"
         >
           {right}
         </div>

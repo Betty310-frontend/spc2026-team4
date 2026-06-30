@@ -10,8 +10,8 @@ const fontVariables = {
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
-    <html lang="ko" className={cn('font-sans')} style={fontVariables}>
-      <body suppressHydrationWarning>
+    <html lang="ko" className={cn('h-full font-sans')} style={fontVariables}>
+      <body className="h-full" suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>
     </html>

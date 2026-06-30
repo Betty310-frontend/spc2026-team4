@@ -24,8 +24,8 @@ export default function Home() {
           onTabChange={setActiveTab}
           reportBadgeVisible={reportBadgeVisible}
           mapTab={(isActive) => (
-            <div className="flex h-full min-h-0 flex-col gap-2">
-              <div className="h-[clamp(340px,calc(100dvh-210px),520px)] min-h-[340px]">
+            <div className="flex h-full min-h-0 flex-1 flex-col gap-2">
+              <div className="min-h-0 flex-1">
                 <KakaoMap
                   options={mapOptions}
                   userLocation={analysisContext.userLocation}
@@ -39,7 +39,7 @@ export default function Home() {
             </div>
           )}
           reportTab={(isActive) => (
-            <div className="h-full min-h-0 overflow-y-auto">
+            <div className="h-full min-h-0 flex-1 overflow-y-auto">
               <ReportSection isActive={isActive} />
             </div>
           )}
