@@ -151,6 +151,8 @@ jobs:
             set -e
             cd /developers/app/backend
 
+            echo "DEBUG IMAGE=[${IMAGE}]"
+
             echo "$DOCKERHUB_TOKEN" | docker login -u "$DOCKERHUB_USERNAME" --password-stdin
 
             docker pull "$IMAGE"
