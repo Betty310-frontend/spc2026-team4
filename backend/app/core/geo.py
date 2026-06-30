@@ -37,16 +37,17 @@ async def _sw8_search(
 async def _address_search(
     client: httpx.AsyncClient, query: str, kakao_key: str
 ) -> dict | None:
-    """주소/지역 검색 API. 구·동 이름을 정확한 행정구역 좌표로 변환. 결과 없으면 None."""
+    """주소/지역 검색 API. 구·동 이름을 정확한 행정구역 좌표로 변환. 서울 주소만 반환."""
     resp = await client.get(
         'https://dapi.kakao.com/v2/local/search/address.json',
-        params={'query': query, 'size': 1},
+        params={'query': query, 'size': 5},
         headers={'Authorization': f'KakaoAK {kakao_key}'},
     )
     resp.raise_for_status()
-    docs = resp.json().get('documents', [])
-    if docs:
-        return {'lat': float(docs[0]['y']), 'lng': float(docs[0]['x'])}
+    for doc in resp.json().get('documents', []):
+        addr = doc.get('address_name', '') or doc.get('road_address_name', '')
+        if addr.startswith('서울'):
+            return {'lat': float(doc['y']), 'lng': float(doc['x'])}
     return None
 
 
