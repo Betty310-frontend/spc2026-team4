@@ -53,11 +53,13 @@ def search_rag_chunks(
 ) -> list[dict]:
     query_embedding = embed_query(question)
 
+    fetch_count = max(n_results * 5, 15)
+
     result = cast(
         dict[str, Any],
         _get_collection().query(
             query_embeddings=[query_embedding],  # type: ignore[arg-type]
-            n_results=n_results,
+            n_results=fetch_count,
             where={'display_name': display_name},
             include=['documents', 'metadatas', 'distances'],
         ),
@@ -68,18 +70,31 @@ def search_rag_chunks(
     distances = cast(list[list[float]], result.get('distances') or [[]])[0]
 
     chunks = []
+    seen_titles = set()
 
     for doc, meta, distance in zip(documents, metadatas, distances):
+        document_title = meta.get("document_title")
+        clean_title = str(document_title or "").replace("[pdf]", "").strip()
+
+        if clean_title in seen_titles:
+            continue
+
+        seen_titles.add(clean_title)
+
         chunks.append(
             {
-                'document_title': meta.get('document_title'),
-                'file_path': meta.get('file_path'),
-                'file_type': meta.get('file_type'),
-                'section_title': meta.get('section_title'),
-                'chunk_text': doc,
-                'distance': distance,
+                "document_title": document_title,
+                "file_path": meta.get("file_path"),
+                "file_type": meta.get("file_type"),
+                "section_title": meta.get("section_title"),
+                "source_url": meta.get("source_url"),
+                "chunk_text": doc,
+                "distance": distance,
             }
         )
+
+        if len(chunks) >= n_results:
+            break
 
     return chunks
 
