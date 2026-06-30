@@ -13,110 +13,110 @@ interface ThemePalette {
 export const themes: Record<ThemeName, ThemePalette> = {
   neutral: {
     label: 'Neutral',
-    swatch: 'oklch(0.556 0 0)',
+    swatch: '#71717a',
     light: {
-      '--primary': 'oklch(0.205 0 0)',
-      '--primary-foreground': 'oklch(0.985 0 0)',
-      '--ring': 'oklch(0.708 0 0)',
-      '--sidebar-primary': 'oklch(0.205 0 0)',
-      '--sidebar-primary-foreground': 'oklch(0.985 0 0)',
+      '--primary': '#18181b',
+      '--primary-foreground': '#ffffff',
+      '--ring': '#a1a1aa',
+      '--sidebar-primary': '#18181b',
+      '--sidebar-primary-foreground': '#ffffff',
     },
     dark: {
-      '--primary': 'oklch(0.922 0 0)',
-      '--primary-foreground': 'oklch(0.205 0 0)',
-      '--ring': 'oklch(0.556 0 0)',
-      '--sidebar-primary': 'oklch(0.488 0.243 264.376)',
-      '--sidebar-primary-foreground': 'oklch(0.985 0 0)',
+      '--primary': '#f4f4f5',
+      '--primary-foreground': '#18181b',
+      '--ring': '#71717a',
+      '--sidebar-primary': '#5c5fc4',
+      '--sidebar-primary-foreground': '#ffffff',
     },
   },
   blue: {
     label: 'Blue',
-    swatch: 'oklch(0.546 0.245 262.881)',
+    swatch: '#5c5fc4',
     light: {
-      '--primary': 'oklch(0.546 0.245 262.881)',
-      '--primary-foreground': 'oklch(0.985 0 0)',
-      '--ring': 'oklch(0.546 0.245 262.881)',
-      '--sidebar-primary': 'oklch(0.546 0.245 262.881)',
-      '--sidebar-primary-foreground': 'oklch(0.985 0 0)',
+      '--primary': '#5c5fc4',
+      '--primary-foreground': '#ffffff',
+      '--ring': '#5c5fc4',
+      '--sidebar-primary': '#5c5fc4',
+      '--sidebar-primary-foreground': '#ffffff',
     },
     dark: {
-      '--primary': 'oklch(0.707 0.165 254.624)',
-      '--primary-foreground': 'oklch(0.145 0 0)',
-      '--ring': 'oklch(0.707 0.165 254.624)',
-      '--sidebar-primary': 'oklch(0.546 0.245 262.881)',
-      '--sidebar-primary-foreground': 'oklch(0.985 0 0)',
+      '--primary': '#9b9eec',
+      '--primary-foreground': '#18181b',
+      '--ring': '#9b9eec',
+      '--sidebar-primary': '#5c5fc4',
+      '--sidebar-primary-foreground': '#ffffff',
     },
   },
   violet: {
     label: 'Violet',
-    swatch: 'oklch(0.491 0.27 278.34)',
+    swatch: '#7c3aed',
     light: {
-      '--primary': 'oklch(0.491 0.27 278.34)',
-      '--primary-foreground': 'oklch(0.985 0 0)',
-      '--ring': 'oklch(0.491 0.27 278.34)',
-      '--sidebar-primary': 'oklch(0.491 0.27 278.34)',
-      '--sidebar-primary-foreground': 'oklch(0.985 0 0)',
+      '--primary': '#7c3aed',
+      '--primary-foreground': '#ffffff',
+      '--ring': '#7c3aed',
+      '--sidebar-primary': '#7c3aed',
+      '--sidebar-primary-foreground': '#ffffff',
     },
     dark: {
-      '--primary': 'oklch(0.702 0.183 276.935)',
-      '--primary-foreground': 'oklch(0.145 0 0)',
-      '--ring': 'oklch(0.702 0.183 276.935)',
-      '--sidebar-primary': 'oklch(0.491 0.27 278.34)',
-      '--sidebar-primary-foreground': 'oklch(0.985 0 0)',
+      '--primary': '#a78bfa',
+      '--primary-foreground': '#18181b',
+      '--ring': '#a78bfa',
+      '--sidebar-primary': '#7c3aed',
+      '--sidebar-primary-foreground': '#ffffff',
     },
   },
   emerald: {
     label: 'Emerald',
-    swatch: 'oklch(0.528 0.148 160.99)',
+    swatch: '#10b981',
     light: {
-      '--primary': 'oklch(0.528 0.148 160.99)',
-      '--primary-foreground': 'oklch(0.985 0 0)',
-      '--ring': 'oklch(0.528 0.148 160.99)',
-      '--sidebar-primary': 'oklch(0.528 0.148 160.99)',
-      '--sidebar-primary-foreground': 'oklch(0.985 0 0)',
+      '--primary': '#10b981',
+      '--primary-foreground': '#ffffff',
+      '--ring': '#10b981',
+      '--sidebar-primary': '#10b981',
+      '--sidebar-primary-foreground': '#ffffff',
     },
     dark: {
-      '--primary': 'oklch(0.696 0.17 162.48)',
-      '--primary-foreground': 'oklch(0.145 0 0)',
-      '--ring': 'oklch(0.696 0.17 162.48)',
-      '--sidebar-primary': 'oklch(0.528 0.148 160.99)',
-      '--sidebar-primary-foreground': 'oklch(0.985 0 0)',
+      '--primary': '#34d399',
+      '--primary-foreground': '#18181b',
+      '--ring': '#34d399',
+      '--sidebar-primary': '#10b981',
+      '--sidebar-primary-foreground': '#ffffff',
     },
   },
   rose: {
     label: 'Rose',
-    swatch: 'oklch(0.576 0.215 22.52)',
+    swatch: '#f43f5e',
     light: {
-      '--primary': 'oklch(0.576 0.215 22.52)',
-      '--primary-foreground': 'oklch(0.985 0 0)',
-      '--ring': 'oklch(0.576 0.215 22.52)',
-      '--sidebar-primary': 'oklch(0.576 0.215 22.52)',
-      '--sidebar-primary-foreground': 'oklch(0.985 0 0)',
+      '--primary': '#f43f5e',
+      '--primary-foreground': '#ffffff',
+      '--ring': '#f43f5e',
+      '--sidebar-primary': '#f43f5e',
+      '--sidebar-primary-foreground': '#ffffff',
     },
     dark: {
-      '--primary': 'oklch(0.712 0.194 22.652)',
-      '--primary-foreground': 'oklch(0.145 0 0)',
-      '--ring': 'oklch(0.712 0.194 22.652)',
-      '--sidebar-primary': 'oklch(0.576 0.215 22.52)',
-      '--sidebar-primary-foreground': 'oklch(0.985 0 0)',
+      '--primary': '#fb7185',
+      '--primary-foreground': '#18181b',
+      '--ring': '#fb7185',
+      '--sidebar-primary': '#f43f5e',
+      '--sidebar-primary-foreground': '#ffffff',
     },
   },
   kakao: {
     label: 'Kakao',
-    swatch: 'oklch(0.924 0.193 103)',                   /* YELLOW[200] #FFE812 */
+    swatch: '#ffe812',                   /* YELLOW[200] #FFE812 */
     light: {
-      '--primary': 'oklch(0.924 0.193 103)',             /* YELLOW[200] #FFE812 */
-      '--primary-foreground': 'oklch(0.370 0.077 102)', /* YELLOW[900] #4A4200 */
-      '--ring': 'oklch(0.543 0.175 271)',                /* INDIGO[400] #5C5FC4 */
-      '--sidebar-primary': 'oklch(0.924 0.193 103)',
-      '--sidebar-primary-foreground': 'oklch(0.370 0.077 102)',
+      '--primary': '#ffe812',             /* YELLOW[200] #FFE812 */
+      '--primary-foreground': '#4a4200', /* YELLOW[900] #4A4200 */
+      '--ring': '#5c5fc4',                /* INDIGO[400] #5C5FC4 */
+      '--sidebar-primary': '#ffe812',
+      '--sidebar-primary-foreground': '#4a4200',
     },
     dark: {
-      '--primary': 'oklch(0.924 0.193 103)',             /* YELLOW[200] — 다크에서도 동일 */
-      '--primary-foreground': 'oklch(0.200 0.050 102)', /* 다크 배경용 더 진한 텍스트 */
-      '--ring': 'oklch(0.662 0.165 270)',                /* INDIGO[400] 밝게 */
-      '--sidebar-primary': 'oklch(0.924 0.193 103)',
-      '--sidebar-primary-foreground': 'oklch(0.200 0.050 102)',
+      '--primary': '#ffe812',             /* YELLOW[200] — 다크에서도 동일 */
+      '--primary-foreground': '#4a4200', /* 다크 배경용 더 진한 텍스트 */
+      '--ring': '#8b8ef0',                /* INDIGO 계열 밝게 */
+      '--sidebar-primary': '#ffe812',
+      '--sidebar-primary-foreground': '#4a4200',
     },
   },
 };

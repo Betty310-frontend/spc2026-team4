@@ -7,6 +7,7 @@ import type {
   CompetitionPercentileResponse,
   H3HexagonItem,
 } from '@/types/api'
+import type { ReportResponse } from '@/types/report'
 
 // 공통 fetch 래퍼 — ApiError throw + 자동 재시도 포함
 async function apiFetch<T>(url: string): Promise<T> {
@@ -85,6 +86,22 @@ export async function fetchH3Hexagons(params: {
   if (params.radius     != null) query.set('radius',     String(params.radius))
   if (params.resolution != null) query.set('resolution', String(params.resolution))
   return withLoading('h3-hexagons', () => apiFetch(`/api/v1/h3-hexagons?${query}`))
+}
+
+export async function fetchReport(params: {
+  위치: string
+  업종: string
+  반경?: number
+  lat?: number
+  lng?: number
+}): Promise<ReportResponse> {
+  const query = new URLSearchParams()
+  query.set('위치', params.위치)
+  query.set('업종', params.업종)
+  if (params.반경 != null) query.set('반경', String(params.반경))
+  if (params.lat != null) query.set('lat', String(params.lat))
+  if (params.lng != null) query.set('lng', String(params.lng))
+  return apiFetch(`/api/v1/report?${query}`)
 }
 
 export async function fetchHealth(): Promise<boolean> {

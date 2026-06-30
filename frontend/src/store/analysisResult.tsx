@@ -3,6 +3,8 @@
 import { createContext, useContext, useEffect, useMemo, useReducer } from 'react'
 import type { MapOptions } from '@/types/api'
 import type { NormalizedCompetitors } from '@/lib/agent-event-bridge'
+import type { ReportResponse } from '@/types/report'
+import { formatNumber } from '@/lib/number-format'
 
 export type MetricStatus = 'idle' | 'loading' | 'done' | 'error' | 'fallback'
 
@@ -14,20 +16,10 @@ export interface MetricCard {
   badgeTier?: 'high' | 'mid' | 'low' | 'info'
   source?: string
   isFallback?: boolean
+  hint?: string
 }
 
-export interface ReportData {
-  요약: string
-  긍정_요인: string[]
-  위험_요인: string[]
-  전략_제안: string[]
-  swot: {
-    강점: string[]
-    약점: string[]
-    기회: string[]
-    위협: string[]
-  }
-}
+export type ReportData = ReportResponse
 
 export interface AnalysisResult {
   competitors: MetricCard
@@ -58,7 +50,7 @@ export type LoadingKey =
 
 type Action =
   | { type: 'UPDATE_METRIC'; key: MetricKey; data: Partial<MetricCard> }
-  | { type: 'SET_REPORT'; report: ReportData }
+  | { type: 'SET_REPORT'; report: ReportData | null }
   | { type: 'SET_MAP_OPTIONS'; mapOptions: MapOptions | null }
   | { type: 'BEGIN_MAP_UPDATE'; reason?: string }
   | { type: 'COMPLETE_MAP_UPDATE'; token: number }
@@ -128,7 +120,7 @@ function reducer(state: AnalysisResult, action: Action): AnalysisResult {
 
 interface AnalysisResultContextValue extends AnalysisResult {
   updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
-  setReportData: (report: ReportData) => void
+  setReportData: (report: ReportData | null) => void
   setMapOptions: (mapOptions: MapOptions | null) => void
   startLoading: (key: LoadingKey) => void
   stopLoading: (key: LoadingKey) => void
@@ -144,7 +136,7 @@ const AnalysisResultCtx = createContext<AnalysisResultContextValue | null>(null)
 
 type AnalysisResultActions = {
   updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
-  setReportData: (report: ReportData) => void
+  setReportData: (report: ReportData | null) => void
   setMapOptions: (mapOptions: MapOptions | null) => void
   startLoading: (key: LoadingKey) => void
   stopLoading: (key: LoadingKey) => void
@@ -192,7 +184,7 @@ export function AnalysisResultProvider({ children }: { children: React.ReactNode
     () => ({
       updateMetric: (key: MetricKey, data: Partial<MetricCard>) =>
         dispatch({ type: 'UPDATE_METRIC', key, data }),
-      setReportData: (report: ReportData) => dispatch({ type: 'SET_REPORT', report }),
+      setReportData: (report: ReportData | null) => dispatch({ type: 'SET_REPORT', report }),
       setMapOptions: (mapOptions: MapOptions | null) =>
         dispatch({ type: 'SET_MAP_OPTIONS', mapOptions }),
       beginMapUpdate: (reason?: string) => dispatch({ type: 'BEGIN_MAP_UPDATE', reason }),
@@ -211,7 +203,7 @@ export function AnalysisResultProvider({ children }: { children: React.ReactNode
           key: 'competitors',
           data: {
             status,
-            value: `${payload.sameCount}곳`,
+            value: `${formatNumber(payload.sameCount)}곳`,
             unit: '곳',
             badge: `총 ${payload.total ?? payload.items.length}곳`,
             source,

@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { AgentMessage, UserMessage } from '@/types/message'
 import { AgentMarkdown } from './AgentMarkdown'
+import { ChevronRight } from 'lucide-react'
 
 interface MessageBubbleProps {
   message: UserMessage | AgentMessage
@@ -58,16 +59,30 @@ export function MessageBubble({
       {showButtons && (
         <div className="mt-2 flex flex-wrap gap-2">
           {message.confirmButtons!.map((btn) => (
-            <Button
-              key={btn.action}
-              variant={btn.variant === 'primary' ? 'default' : 'outline'}
-              size="sm"
-              className="text-xs"
-              disabled={buttonsDisabled}
-              onClick={() => onConfirmAction?.(btn.action)}
-            >
-              {btn.label}
-            </Button>
+            btn.action === 'open_report' ? (
+              <button
+                key={btn.action}
+                type="button"
+                disabled={buttonsDisabled}
+                onClick={() => onConfirmAction?.(btn.action)}
+                className="flex w-fit items-center gap-1.5 rounded-lg bg-blue-600 px-3 py-1.5 text-xs font-medium text-white shadow-sm transition-colors duration-150 hover:bg-blue-700 disabled:cursor-not-allowed disabled:opacity-60"
+              >
+                <span>📊</span>
+                <span>{btn.label}</span>
+                <ChevronRight className="h-3.5 w-3.5" />
+              </button>
+            ) : (
+              <Button
+                key={btn.action}
+                variant={btn.variant === 'primary' ? 'default' : 'outline'}
+                size="sm"
+                className="text-xs"
+                disabled={buttonsDisabled}
+                onClick={() => onConfirmAction?.(btn.action)}
+              >
+                {btn.label}
+              </Button>
+            )
           ))}
         </div>
       )}
