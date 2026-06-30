@@ -2,7 +2,7 @@ name: Backend CI/CD
 
 on:
   push:
-    branches: [main, develop, deploy/test]
+    branches: [main, develop]
     paths:
       - 'backend/**'
       - '.github/workflows/backend.yml'
@@ -103,7 +103,7 @@ jobs:
     name: Deploy → Dev Server (develop)
     needs: build-push
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/deploy/test')
+    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
     environment: development
 
     steps:
