@@ -1,0 +1,563 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>상권 분석 리포트</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Apple SD Gothic Neo', 'Noto Sans KR', sans-serif; background: #f0f2f5; color: #1a1a2e; }
+
+    /* ── 상단 검색 바 ── */
+    .search-bar {
+      background: #1a1a2e; padding: 20px 32px;
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+    }
+    .search-bar h1 { color: #fff; font-size: 18px; font-weight: 700; margin-right: 8px; white-space: nowrap; }
+    .search-bar input {
+      padding: 8px 14px; border: none; border-radius: 8px;
+      font-size: 14px; background: #fff; color: #1a1a2e; outline: none;
+    }
+    .search-bar input[type=text] { width: 140px; }
+    .search-bar input[type=number] { width: 80px; }
+    .search-bar .radius-wrap { display: flex; align-items: center; gap: 6px; color: #ccc; font-size: 13px; }
+    .btn-search {
+      padding: 8px 20px; background: #4f8ef7; color: #fff;
+      border: none; border-radius: 8px; font-size: 14px; font-weight: 600;
+      cursor: pointer; transition: background .2s;
+    }
+    .btn-search:hover { background: #2d6fd4; }
+    .btn-search:disabled { background: #555; cursor: not-allowed; }
+
+    /* ── 로딩 / 에러 ── */
+    #status { text-align: center; padding: 60px; font-size: 15px; color: #666; display: none; }
+    #error-msg { display: none; text-align: center; padding: 40px; color: #e53e3e; font-size: 15px; }
+
+    /* ── 메인 콘텐츠 ── */
+    #report { display: none; padding: 28px 32px; max-width: 1200px; margin: 0 auto; }
+
+    /* ── 메타 헤더 ── */
+    .meta-header {
+      background: #fff; border-radius: 14px; padding: 20px 28px;
+      margin-bottom: 20px; display: flex; align-items: center; justify-content: space-between;
+      flex-wrap: wrap; gap: 12px; box-shadow: 0 2px 8px rgba(0,0,0,.06);
+    }
+    .meta-title { font-size: 22px; font-weight: 700; }
+    .meta-title span { color: #4f8ef7; }
+    .meta-badges { display: flex; gap: 8px; flex-wrap: wrap; }
+    .badge { padding: 4px 12px; border-radius: 20px; font-size: 12px; font-weight: 600; background: #eef2ff; color: #4f8ef7; }
+    .meta-date { font-size: 12px; color: #999; }
+
+    /* ── 요약 텍스트 ── */
+    .summary-box {
+      background: #1a1a2e; color: #e8ecf4;
+      border-radius: 12px; padding: 16px 22px; margin-bottom: 20px;
+      font-size: 14px; line-height: 1.7; box-shadow: 0 2px 8px rgba(0,0,0,.1);
+    }
+
+    /* ── KPI 카드 ── */
+    .kpi-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      gap: 14px; margin-bottom: 20px;
+    }
+    .kpi-card { background: #fff; border-radius: 14px; padding: 16px 20px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+    .kpi-card .label { font-size: 12px; color: #888; margin-bottom: 6px; }
+    .kpi-card .value { font-size: 26px; font-weight: 700; }
+    .kpi-card .sub { font-size: 12px; color: #aaa; margin-top: 4px; }
+    .kpi-card.highlight .value { color: #4f8ef7; }
+    .kpi-card.warn .value { color: #e57a2e; }
+    .kpi-card.good .value { color: #38a169; }
+
+    /* ── 섹션 타이틀 ── */
+    .section-title {
+      font-size: 15px; font-weight: 700; color: #333;
+      margin-bottom: 14px; padding-bottom: 8px;
+      border-bottom: 2px solid #eef2ff;
+      display: flex; align-items: center; gap: 8px;
+    }
+
+    /* ── 차트 그리드 ── */
+    .chart-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+      gap: 16px; margin-bottom: 24px;
+    }
+    .chart-card { background: #fff; border-radius: 14px; padding: 20px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+    .chart-card .chart-title { font-size: 13px; font-weight: 600; color: #555; margin-bottom: 10px; }
+    .chart-card canvas { max-height: 220px; }
+    .chart-card.wide { grid-column: 1 / -1; }
+    .chart-card.wide canvas { max-height: 200px; }
+
+    /* ── 경쟁 밀집도 게이지 ── */
+    .gauge-card {
+      background: #fff; border-radius: 14px; padding: 20px 24px;
+      box-shadow: 0 2px 8px rgba(0,0,0,.06);
+      display: flex; flex-direction: column; align-items: center; gap: 8px;
+    }
+    .gauge-card .chart-title { font-size: 13px; font-weight: 600; color: #555; align-self: flex-start; margin-bottom: 4px; }
+    .gauge-num { font-size: 36px; font-weight: 800; }
+    .gauge-label { font-size: 13px; color: #666; }
+    .gauge-bar { width: 100%; height: 10px; background: #e8ecf4; border-radius: 99px; overflow: hidden; margin-top: 6px; }
+    .gauge-fill { height: 100%; border-radius: 99px; transition: width .6s ease; }
+    .tier-high .gauge-fill { background: #e53e3e; }
+    .tier-mid  .gauge-fill { background: #e57a2e; }
+    .tier-low  .gauge-fill { background: #38a169; }
+    .tier-high .gauge-num  { color: #e53e3e; }
+    .tier-mid  .gauge-num  { color: #e57a2e; }
+    .tier-low  .gauge-num  { color: #38a169; }
+
+    /* ── 정보 바 ── */
+    .info-bar {
+      display: flex; flex-wrap: wrap; align-items: center; gap: 4px;
+      background: #f5f7fc; border: 1px solid #e4e8f4;
+      border-radius: 7px; padding: 5px 8px;
+      margin-bottom: 10px;
+    }
+    .ib-tag {
+      display: inline-flex; align-items: center;
+      padding: 1px 7px; border-radius: 20px;
+      font-size: 10px; font-weight: 600; white-space: nowrap;
+    }
+    .ib-industry { background: #eef2ff; color: #3d5fe0; border: 1px solid #c7d8ff; }
+    .ib-pop      { background: #f0f0f6; color: #555;    border: 1px solid #dde0ea; }
+    .ib-radius   { background: #e8faf2; color: #256b45; border: 1px solid #b2dfce; }
+    .ib-dong     { background: #f4f4f8; color: #555;    border: 1px solid #dde0ea; }
+    .ib-period   { background: #fffbea; color: #8a5e00; border: 1px solid #f0dfa0; }
+    .ib-calc {
+      flex: 1 1 100%; font-size: 10px; color: #999; line-height: 1.5;
+      padding-top: 3px; margin-top: 1px; border-top: 1px solid #e4e8f4;
+    }
+
+    /* ── SWOT ── */
+    .swot-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-bottom: 24px; }
+    .swot-cell { border-radius: 12px; padding: 16px 18px; }
+    .swot-cell.s { background: #ebf8ee; } .swot-cell.w { background: #fff5eb; }
+    .swot-cell.o { background: #eef2ff; } .swot-cell.t { background: #fff0f0; }
+    .swot-cell .swot-label { font-size: 11px; font-weight: 700; letter-spacing: .05em; margin-bottom: 8px; }
+    .swot-cell.s .swot-label { color: #38a169; } .swot-cell.w .swot-label { color: #e57a2e; }
+    .swot-cell.o .swot-label { color: #4f8ef7; } .swot-cell.t .swot-label { color: #e53e3e; }
+    .swot-cell ul { padding-left: 16px; font-size: 13px; line-height: 1.8; color: #444; }
+
+    /* ── 인사이트 / 전략 / 체크리스트 ── */
+    .text-section { background: #fff; border-radius: 14px; padding: 20px 24px; margin-bottom: 16px; box-shadow: 0 2px 8px rgba(0,0,0,.06); }
+    .insight-list, .strategy-list, .check-list { list-style: none; }
+    .insight-list li, .strategy-list li, .check-list li {
+      padding: 8px 0; border-bottom: 1px solid #f0f2f5;
+      font-size: 13px; line-height: 1.7; display: flex; gap: 8px;
+    }
+    .insight-list li:last-child, .strategy-list li:last-child, .check-list li:last-child { border-bottom: none; }
+    .insight-list li::before  { content: '💡'; flex-shrink: 0; }
+    .strategy-list li::before { content: '→'; color: #4f8ef7; font-weight: 700; flex-shrink: 0; }
+    .check-list li::before    { content: '☐'; color: #4f8ef7; flex-shrink: 0; }
+
+    /* ── 데이터 출처 ── */
+    .sources { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 8px; }
+    .source-chip {
+      background: #f0f2f5; border-radius: 8px; padding: 8px 14px;
+      font-size: 12px; color: #555; text-decoration: none;
+      border: 1px solid #e2e6ea; display: flex; flex-direction: column; gap: 2px;
+    }
+    .source-chip:hover { background: #eef2ff; border-color: #4f8ef7; }
+    .source-chip .src-label { font-weight: 600; color: #333; }
+    .source-chip .src-ref { color: #888; font-size: 11px; }
+
+    /* ── 경고 배너 ── */
+    .forbidden-warn {
+      background: #fff5f5; border: 1px solid #fca5a5; border-radius: 10px;
+      padding: 12px 16px; color: #c53030; font-size: 13px; margin-bottom: 16px;
+    }
+    .no-data { color: #bbb; font-size: 13px; text-align: center; padding: 20px; }
+  </style>
+</head>
+<body>
+
+<!-- 검색 바 -->
+<div class="search-bar">
+  <h1>상권 분석 리포트</h1>
+  <input id="inp-station"  type="text"   placeholder="위치 (예: 성수역)" />
+  <input id="inp-category" type="text"   placeholder="업종 (예: 카페)" />
+  <div class="radius-wrap">반경 <input id="inp-radius" type="number" value="500" min="100" max="1000" step="100" /> m</div>
+  <button class="btn-search" id="btn-search" onclick="fetchReport()">분석하기</button>
+</div>
+
+<div id="status">⏳ 데이터를 불러오는 중...</div>
+<div id="error-msg"></div>
+
+<div id="report">
+
+  <!-- 메타 -->
+  <div class="meta-header">
+    <div>
+      <div class="meta-title" id="meta-title">—</div>
+      <div class="meta-badges" id="meta-badges"></div>
+    </div>
+    <div class="meta-date" id="meta-date"></div>
+  </div>
+
+  <!-- 리스크 요약 -->
+  <div class="summary-box" id="risk-summary" style="display:none"></div>
+
+  <!-- 금지어 경고 -->
+  <div class="forbidden-warn" id="forbidden-warn" style="display:none">
+    ⚠️ 이 리포트에는 과도한 표현이 포함될 수 있습니다. 참고용으로만 활용하세요.
+  </div>
+
+  <!-- KPI 카드 -->
+  <div class="kpi-grid" id="kpi-grid"></div>
+
+  <!-- 차트 영역 -->
+  <div class="section-title">📊 차트 분석</div>
+  <div class="chart-grid" id="chart-grid"></div>
+
+  <!-- SWOT -->
+  <div id="swot-section" style="display:none">
+    <div class="section-title">🔲 SWOT 분석</div>
+    <div class="swot-grid" id="swot-grid"></div>
+  </div>
+
+  <!-- 인사이트 -->
+  <div class="text-section" id="insights-section" style="display:none">
+    <div class="section-title">💡 인사이트</div>
+    <ul class="insight-list" id="insights-list"></ul>
+  </div>
+
+  <!-- 전략 제안 -->
+  <div class="text-section" id="strategy-section" style="display:none">
+    <div class="section-title">🎯 전략 제안</div>
+    <ul class="strategy-list" id="strategy-list"></ul>
+  </div>
+
+  <!-- 확인 질문 -->
+  <div class="text-section" id="check-section" style="display:none">
+    <div class="section-title">✅ 창업 전 확인 질문</div>
+    <ul class="check-list" id="check-list"></ul>
+  </div>
+
+  <!-- 데이터 출처 -->
+  <div class="text-section" id="sources-section" style="display:none">
+    <div class="section-title">📋 데이터 출처</div>
+    <div class="sources" id="sources-list"></div>
+  </div>
+
+</div>
+
+<script>
+// ── 차트 인스턴스 관리 ──
+const _charts = {};
+function destroyChart(id) { if (_charts[id]) { _charts[id].destroy(); delete _charts[id]; } }
+const PALETTE = ['#4f8ef7','#e57a2e','#38a169','#e53e3e','#9b59b6','#1abc9c','#f39c12','#2d6fd4'];
+
+// 검색 컨텍스트
+let _ctx = { category: '', radius: 500 };
+
+// ── 메타데이터 ──
+const CHART_META = {
+  'competition-gauge': {
+    hasIndustry: true, radiusDirect: true,
+    table: 'geo_store', period: '2026년 3월',
+    calc: 'ST_DWithin 반경 검색 → 서울 전체 밀도 분포 대비 퍼센타일',
+  },
+  'pop-hourly': {
+    hasIndustry: false, radiusDirect: false,
+    table: 'local_people_hourly', period: '2023~2025년 평균',
+    calc: '반경 내 행정동 코드 추출 → 시간대(00~23시)별 평균 생활인구',
+  },
+  'sales-slot': {
+    hasIndustry: true, radiusDirect: false,
+    table: 'sales_avg_by_dong_industry', period: '2023~2025년 분기 평균',
+    calc: '행정동 × 업종 필터 → 6개 시간대별 월평균 매출',
+  },
+  'pop-age': {
+    hasIndustry: false, radiusDirect: false,
+    table: 'mv_local_people_monthly', period: '최근 월 기준',
+    calc: '행정동별 연령대 인구 평균 → 비율(%) 변환. 전체 생활인구 기준',
+  },
+  'sales-age': {
+    hasIndustry: true, radiusDirect: false,
+    table: 'sales_avg_by_dong_industry', period: '2023~2025년 분기 평균',
+    calc: '행정동 × 업종 필터 → 연령대별 월평균 매출',
+  },
+  'gender-sales': {
+    hasIndustry: true, radiusDirect: false,
+    table: 'sales_avg_by_dong_industry', period: '2023~2025년 분기 평균',
+    calc: '행정동 × 업종 필터 → 남/여 매출 평균 → 비율(%)',
+  },
+  'gender-pop': {
+    hasIndustry: false, radiusDirect: false,
+    table: 'mv_local_people_monthly', period: '최근 월 기준',
+    calc: '행정동별 남/여 인구 평균 → 비율(%). 전체 생활인구 기준',
+  },
+  'ww-sales': {
+    hasIndustry: true, radiusDirect: false,
+    table: 'sales_avg_by_dong_industry', period: '2023~2025년 분기 평균',
+    calc: '행정동 × 업종 필터 → 주중(weekday_amt) / 주말(weekend_amt) 평균 비교',
+  },
+};
+
+const KPI_META = {
+  '경쟁업체 수': {
+    hasIndustry: true, radiusDirect: true,
+    table: 'geo_store', period: '2026년 3월',
+    calc: 'ST_DWithin(반경) 공간 검색 → 동일/유사 업종 COUNT',
+  },
+  '경쟁 밀집도': {
+    hasIndustry: true, radiusDirect: true,
+    table: 'geo_store + 서울 전체', period: '2026년 3월',
+    calc: '반경 내 업소 수를 서울 전체 업종 밀도 분포와 비교 → 퍼센타일(0~100)',
+  },
+  '업소당 월 추정매출': {
+    hasIndustry: true, radiusDirect: false,
+    table: 'sales_avg_by_dong_industry', period: '2023~2025년 분기 평균',
+    calc: '행정동 × 업종 월평균 매출 합계 ÷ 반경 내 경쟁업체 수',
+  },
+  '핵심시간대 평균인구': {
+    hasIndustry: false, radiusDirect: false,
+    table: 'local_people_hourly', period: '2023~2025년 평균',
+    calc: '행정동 기준 업종별 핵심 시간대의 평균 생활인구. 업종 무관',
+  },
+  '주중 평균 매출': {
+    hasIndustry: true, radiusDirect: false,
+    table: 'sales_avg_by_dong_industry', period: '2023~2025년 분기 평균',
+    calc: '행정동 × 업종 필터 → weekday_amt 평균',
+  },
+  '주말 평균 매출': {
+    hasIndustry: true, radiusDirect: false,
+    table: 'sales_avg_by_dong_industry', period: '2023~2025년 분기 평균',
+    calc: '행정동 × 업종 필터 → weekend_amt 평균',
+  },
+  '매출 최고 시간대': {
+    hasIndustry: true, radiusDirect: false,
+    table: 'sales_avg_by_dong_industry', period: '2023~2025년 분기 평균',
+    calc: '6개 시간대 컬럼 중 평균 매출이 가장 높은 구간 반환',
+  },
+  '인구 주요 연령대': {
+    hasIndustry: false, radiusDirect: false,
+    table: 'mv_local_people_monthly', period: '최근 월 기준',
+    calc: '행정동 기준 연령대별 평균 인구 중 가장 높은 연령대. 업종 무관',
+  },
+};
+
+// ── 정보 바 HTML 생성 ──
+function buildInfoBar(meta) {
+  const indTag = meta.hasIndustry
+    ? `<span class="ib-tag ib-industry">🎯 업종: ${_ctx.category}</span>`
+    : `<span class="ib-tag ib-pop">👥 전체 인구 기준</span>`;
+  const radTag = meta.radiusDirect
+    ? `<span class="ib-tag ib-radius">📍 반경 ${_ctx.radius}m</span>`
+    : `<span class="ib-tag ib-dong">🏘️ 행정동 기준</span>`;
+  const perTag = `<span class="ib-tag ib-period">📅 ${meta.period}</span>`;
+  return `<div class="info-bar">${indTag}${radTag}${perTag}<span class="ib-calc">${meta.calc}</span></div>`;
+}
+
+// ── API 호출 ──
+async function fetchReport() {
+  const station  = document.getElementById('inp-station').value.trim();
+  const category = document.getElementById('inp-category').value.trim();
+  const radius   = parseInt(document.getElementById('inp-radius').value) || 500;
+  if (!station || !category) { alert('위치와 업종을 입력하세요.'); return; }
+  _ctx = { category, radius };
+  setStatus('loading');
+  try {
+    const params = new URLSearchParams({ '위치': station, '업종': category, '반경': radius });
+    const res = await fetch(`/api/v1/report?${params}`);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+    renderReport(await res.json());
+    setStatus('done');
+  } catch (e) { setStatus('error', e.message); }
+}
+
+function setStatus(state, msg) {
+  document.getElementById('status').style.display    = state === 'loading' ? 'block' : 'none';
+  document.getElementById('report').style.display    = state === 'done'    ? 'block' : 'none';
+  document.getElementById('error-msg').style.display = state === 'error'   ? 'block' : 'none';
+  if (state === 'error') document.getElementById('error-msg').textContent = '⚠️ ' + msg;
+  document.getElementById('btn-search').disabled = state === 'loading';
+}
+
+// ── 리포트 렌더링 ──
+function renderReport(d) {
+  Object.keys(_charts).forEach(destroyChart);
+  const { meta, competition, sales, population, swot, insights, strategy, checklist_questions, risk_summary, forbidden_violated, charts } = d;
+
+  document.getElementById('meta-title').innerHTML = `<span>${meta.station}</span> · ${meta.category} · 반경 ${meta.radius_m}m`;
+  document.getElementById('meta-badges').innerHTML = meta.dong_name ? `<span class="badge">${meta.dong_name}</span>` : '';
+  document.getElementById('meta-date').textContent = `생성: ${meta.generated_at}`;
+
+  if (risk_summary) { const el = document.getElementById('risk-summary'); el.textContent = risk_summary; el.style.display = 'block'; }
+  document.getElementById('forbidden-warn').style.display = forbidden_violated ? 'block' : 'none';
+
+  // KPI
+  const kpiEl = document.getElementById('kpi-grid');
+  kpiEl.innerHTML = '';
+  const tierClass = { high: 'warn', mid: 'highlight', low: 'good' };
+  kpiCards([
+    { label: '경쟁업체 수',     value: `${competition.competitor_count}개`,           sub: competition.percentile_label, cls: tierClass[competition.tier] || '' },
+    { label: '경쟁 밀집도',     value: `${competition.competition_percentile}%ile`,    sub: competition.percentile_label, cls: tierClass[competition.tier] || '' },
+    sales.per_store_est_amt_label ? { label: '업소당 월 추정매출', value: sales.per_store_est_amt_label, sub: sales.per_store_est_cnt ? `${sales.per_store_est_cnt.toLocaleString()}건` : '', cls: 'highlight' } : null,
+    population.avg_peak_population != null ? { label: '핵심시간대 평균인구', value: `${Math.round(population.avg_peak_population).toLocaleString()}명`, sub: population.peak_hour ? `피크: ${population.peak_hour}시` : '', cls: 'highlight' } : null,
+    sales.weekday_avg_amt != null ? { label: '주중 평균 매출',   value: man(sales.weekday_avg_amt), cls: '' } : null,
+    sales.weekend_avg_amt != null ? { label: '주말 평균 매출',   value: man(sales.weekend_avg_amt), cls: '' } : null,
+    sales.peak_slot               ? { label: '매출 최고 시간대', value: `${sales.peak_slot}시`,      cls: '' } : null,
+    population.top_age            ? { label: '인구 주요 연령대', value: population.top_age,          cls: '' } : null,
+  ].filter(Boolean), kpiEl);
+
+  // 차트
+  const gridEl = document.getElementById('chart-grid');
+  gridEl.innerHTML = '';
+  addGaugeCard(gridEl, charts.competition_gauge);
+  if (charts.population_hourly?.length)
+    addChartCard(gridEl, 'pop-hourly', '시간대별 생활인구', 'line',
+      charts.population_hourly.map(r => r.label),
+      [{ label: '평균 인구', data: charts.population_hourly.map(r => r.value), borderColor: '#4f8ef7', backgroundColor: 'rgba(79,142,247,.1)', fill: true, tension: .4, pointRadius: 3 }],
+      { wide: true });
+  if (charts.sales_by_timeslot?.length)
+    addChartCard(gridEl, 'sales-slot', '시간대별 매출', 'bar',
+      charts.sales_by_timeslot.map(r => r.label),
+      [{ label: '평균 매출', data: charts.sales_by_timeslot.map(r => r.value), backgroundColor: '#4f8ef7' }],
+      { yFormat: 'man' });
+  if (charts.population_by_age?.length)
+    addChartCard(gridEl, 'pop-age', '연령대별 생활인구 비율', 'bar',
+      charts.population_by_age.map(r => r.label),
+      [{ label: '비율(%)', data: charts.population_by_age.map(r => r.value), backgroundColor: PALETTE }],
+      { yFormat: 'pct' });
+  if (charts.sales_by_age?.length)
+    addChartCard(gridEl, 'sales-age', '연령대별 매출', 'bar',
+      charts.sales_by_age.map(r => r.label),
+      [{ label: '평균 매출', data: charts.sales_by_age.map(r => r.value), backgroundColor: PALETTE }],
+      { yFormat: 'man' });
+  if (charts.gender_sales_ratio?.length)
+    addChartCard(gridEl, 'gender-sales', '성별 매출 비율', 'doughnut',
+      charts.gender_sales_ratio.map(r => r.label),
+      [{ data: charts.gender_sales_ratio.map(r => r.value), backgroundColor: ['#4f8ef7','#e57a2e'] }]);
+  if (charts.gender_population?.length)
+    addChartCard(gridEl, 'gender-pop', '성별 생활인구 비율', 'doughnut',
+      charts.gender_population.map(r => r.label),
+      [{ data: charts.gender_population.map(r => r.value), backgroundColor: ['#4f8ef7','#e57a2e'] }]);
+  if (charts.weekday_weekend_sales?.length)
+    addChartCard(gridEl, 'ww-sales', '주중 · 주말 매출 비교', 'bar',
+      charts.weekday_weekend_sales.map(r => r.label),
+      [{ label: '평균 매출', data: charts.weekday_weekend_sales.map(r => r.value), backgroundColor: ['#4f8ef7','#38a169'] }],
+      { yFormat: 'man' });
+
+  // SWOT
+  const swotSection = document.getElementById('swot-section');
+  if (swot && Object.values(swot).some(v => v?.length)) {
+    document.getElementById('swot-grid').innerHTML = [
+      ['s', '강점 (Strengths)',     swot['강점'] || swot['S'] || []],
+      ['w', '약점 (Weaknesses)',    swot['약점'] || swot['W'] || []],
+      ['o', '기회 (Opportunities)', swot['기회'] || swot['O'] || []],
+      ['t', '위협 (Threats)',       swot['위협'] || swot['T'] || []],
+    ].map(([cls, label, items]) =>
+      `<div class="swot-cell ${cls}"><div class="swot-label">${label}</div><ul>${
+        (Array.isArray(items) ? items : [items]).filter(Boolean).map(i => `<li>${i}</li>`).join('')
+      }</ul></div>`
+    ).join('');
+    swotSection.style.display = 'block';
+  } else swotSection.style.display = 'none';
+
+  renderList('insights-section', 'insights-list', insights);
+  renderList('strategy-section', 'strategy-list', strategy);
+  renderList('check-section',    'check-list',    checklist_questions);
+
+  const srcSection = document.getElementById('sources-section');
+  if (meta.data_sources?.length) {
+    document.getElementById('sources-list').innerHTML = meta.data_sources.map(s =>
+      `<a class="source-chip" href="${s.url || '#'}" target="_blank" rel="noopener">
+        <span class="src-label">${s.label}</span>
+        <span class="src-ref">${s.provider} · ${s.reference}</span>
+      </a>`
+    ).join('');
+    srcSection.style.display = 'block';
+  } else srcSection.style.display = 'none';
+}
+
+// ── 헬퍼 ──
+function man(v) { return v == null ? '—' : Math.round(v / 10000).toLocaleString() + '만원'; }
+
+function kpiCards(cards, el) {
+  cards.forEach(c => {
+    const m = KPI_META[c.label];
+    const div = document.createElement('div');
+    div.className = `kpi-card ${c.cls || ''}`;
+    div.innerHTML = `
+      ${m ? buildInfoBar(m) : ''}
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+      ${c.sub ? `<div class="sub">${c.sub}</div>` : ''}
+    `;
+    el.appendChild(div);
+  });
+}
+
+function addGaugeCard(parent, gauge) {
+  if (!gauge) return;
+  const m = CHART_META['competition-gauge'];
+  const card = document.createElement('div');
+  card.className = `gauge-card tier-${gauge.tier}`;
+  const pct = gauge.percentile;
+  card.innerHTML = `
+    ${buildInfoBar(m)}
+    <div class="chart-title" style="align-self:flex-start">경쟁 밀집도 게이지</div>
+    <div class="gauge-num">${pct}<small style="font-size:16px">%ile</small></div>
+    <div class="gauge-label">${gauge.label}</div>
+    <div class="gauge-bar"><div class="gauge-fill" style="width:${pct}%"></div></div>
+    <div style="font-size:12px;color:#888;margin-top:8px">경쟁업체 ${gauge.competitor_count}개</div>`;
+  parent.appendChild(card);
+}
+
+function addChartCard(parent, id, title, type, labels, datasets, opts = {}) {
+  const m = CHART_META[id];
+  const card = document.createElement('div');
+  card.className = `chart-card${opts.wide ? ' wide' : ''}`;
+  card.innerHTML = `
+    ${m ? buildInfoBar(m) : ''}
+    <div class="chart-title">${title}</div>
+    <canvas id="chart-${id}"></canvas>`;
+  parent.appendChild(card);
+
+  const isDoughnut = type === 'doughnut';
+  const yFmt = opts.yFormat;
+  _charts[id] = new Chart(document.getElementById(`chart-${id}`), {
+    type,
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: true,
+      plugins: {
+        legend: { display: isDoughnut, position: 'bottom', labels: { font: { size: 12 }, padding: 16 } },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const v = ctx.parsed.y ?? ctx.parsed;
+              if (yFmt === 'man') return ` ${man(typeof v === 'number' ? v : ctx.raw)}`;
+              if (yFmt === 'pct') return ` ${(typeof v === 'number' ? v : ctx.raw).toFixed(1)}%`;
+              if (isDoughnut) return ` ${ctx.raw.toFixed(1)}%`;
+              return ` ${typeof v === 'number' ? v.toLocaleString() : ctx.raw}`;
+            }
+          }
+        }
+      },
+      scales: isDoughnut ? {} : {
+        x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        y: {
+          beginAtZero: true, grid: { color: '#f0f2f5' },
+          ticks: { font: { size: 11 }, callback: v => yFmt === 'man' ? man(v) : yFmt === 'pct' ? v + '%' : v.toLocaleString() }
+        }
+      }
+    }
+  });
+}
+
+function renderList(sectionId, listId, items) {
+  const section = document.getElementById(sectionId);
+  if (items?.length) {
+    document.getElementById(listId).innerHTML = items.map(i => `<li>${i}</li>`).join('');
+    section.style.display = 'block';
+  } else section.style.display = 'none';
+}
+
+document.addEventListener('keydown', e => { if (e.key === 'Enter') fetchReport(); });
+</script>
+</body>
+</html>

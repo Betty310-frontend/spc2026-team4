@@ -37,10 +37,10 @@ class TestSystemPromptRules:
         assert '역명' in _SYSTEM
         assert '동네명' in _SYSTEM
 
-    def test_non_seoul_cities_listed(self):
-        """분석 불가 지역으로 타 광역시·도가 명시되어야 한다."""
-        assert '부산' in _SYSTEM
-        assert '대구' in _SYSTEM
+    def test_non_seoul_region_handled_by_geocoder(self):
+        """서울 외 지역 판단은 LLM이 아닌 지오코더가 담당한다는 규칙이 명시되어야 한다."""
+        assert '지오코더' in _SYSTEM
+        assert 'geocode_failed' in _SYSTEM
 
     def test_category_normalization_rules_exist(self):
         """업종 정규화 규칙(카페, 미용실 등)이 포함되어야 한다."""
