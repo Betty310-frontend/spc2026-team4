@@ -48,19 +48,14 @@ export function AgentPanel({
     return id
   }, [])
 
-  const buildReportRequestSnapshot = useCallback(
-    () => ({
-      위치: analysisContextRef.current.location ?? '',
-      업종: analysisContextRef.current.industry ?? '',
-      반경: analysisContextRef.current.radius ?? undefined,
-      lat: analysisContextRef.current.center?.lat ?? undefined,
-      lng: analysisContextRef.current.center?.lng ?? undefined,
-    }),
-    [],
-  )
-
   const handleRegenerateReport = useCallback(() => {
-    requestReportRefresh(buildReportRequestSnapshot())
+    requestReportRefresh({
+      위치: analysisContext.location ?? '',
+      업종: analysisContext.industry ?? '',
+      반경: analysisContext.radius ?? undefined,
+      lat: analysisContext.center?.lat ?? undefined,
+      lng: analysisContext.center?.lng ?? undefined,
+    })
     onOpenReportTab?.()
     onReportAnnouncementVisibleChange?.(false)
     if (locationChangeNoticeIdRef.current) {
@@ -73,7 +68,11 @@ export function AgentPanel({
       )
     }
   }, [
-    buildReportRequestSnapshot,
+    analysisContext.center?.lat,
+    analysisContext.center?.lng,
+    analysisContext.industry,
+    analysisContext.location,
+    analysisContext.radius,
     onOpenReportTab,
     onReportAnnouncementVisibleChange,
   ])
@@ -115,8 +114,7 @@ export function AgentPanel({
   const prevCenterRef = useRef<{ lat: number; lng: number } | null>(analysisContext.center)
   const pendingIndustryResetRef = useRef<string | null>(null)
   const lastAnalysisSignatureRef = useRef<string | null>(null)
-  const analysisContextRef = useRef(analysisContext)
-  const analysisRunLockRef = useRef(false)
+  const [analysisRunInFlight, setAnalysisRunInFlight] = useState(false)
   const centerLat = analysisContext.center?.lat ?? null
   const centerLng = analysisContext.center?.lng ?? null
 
@@ -131,20 +129,16 @@ export function AgentPanel({
     return `${industry}|${radius}|location:${analysisContext.location ?? ''}`
   }, [analysisContext.industry, analysisContext.location, analysisContext.radius, centerLat, centerLng])
 
-  useEffect(() => {
-    analysisContextRef.current = analysisContext
-  }, [analysisContext])
-
   // 에이전트가 업종·위치 컨텍스트를 파싱하면 자동으로 데이터 조회 시작
   // 핀 이동으로 location이 바뀌거나, 같은 location 안에서 center가 바뀌면 재분석한다.
   useEffect(() => {
     const industry = analysisContext.industry
     const location = analysisContext.location
     if (!isValidCategory(industry) || !location) return
-    if (analysisRunLockRef.current) return
+    if (analysisRunInFlight) return
     if (lastAnalysisSignatureRef.current === analysisSignature) return
 
-    analysisRunLockRef.current = true
+    setAnalysisRunInFlight(true)
     lastAnalysisSignatureRef.current = analysisSignature
     void (async () => {
       try {
@@ -157,16 +151,7 @@ export function AgentPanel({
           행정동코드: analysisContext.dongCode ?? undefined,
         })
       } finally {
-        analysisRunLockRef.current = false
-        const latest = analysisContextRef.current
-        const latestCenterLat = latest.center?.lat ?? null
-        const latestCenterLng = latest.center?.lng ?? null
-        const latestSignature =
-          latestCenterLat != null && latestCenterLng != null
-            ? `${latest.industry ?? ''}|${latest.radius ?? ''}|center:${latestCenterLat.toFixed(6)},${latestCenterLng.toFixed(6)}`
-            : `${latest.industry ?? ''}|${latest.radius ?? ''}|location:${latest.location ?? ''}`
-
-        lastAnalysisSignatureRef.current = latestSignature
+        setAnalysisRunInFlight(false)
       }
     })()
   }, [
@@ -177,6 +162,7 @@ export function AgentPanel({
     analysisContext.dongCode,
     centerLat,
     centerLng,
+    analysisRunInFlight,
     runAnalysis,
   ])
 

@@ -255,32 +255,27 @@ export function KakaoMap({
   const currentCenter = analysisContext.center ?? options?.center ?? userLocation ?? SEOUL_CENTER
   const selectedRadius = analysisContext.radius ?? options?.radius_m ?? DEFAULT_RADIUS_M
   const radiusTiers = useMemo(() => buildRadiusTiers(selectedRadius), [selectedRadius])
-  const competitorCount = options?.competitors.length ?? 0
+  const competitors = useMemo(() => options?.competitors ?? [], [options?.competitors])
+  const competitorCount = competitors.length
+  const selectedHexIndexForRender =
+    selectedHexIndex != null && h3Hexagons.some((hex) => hex.h3Index === selectedHexIndex)
+      ? selectedHexIndex
+      : null
   const selectedCompetitorIds = useMemo(() => {
-    if (!selectedHexIndex || h3Resolution == null || !options?.competitors.length) return new Set<string>()
+    if (!selectedHexIndexForRender || h3Resolution == null || !competitors.length) return new Set<string>()
 
-    const ids = options.competitors
+    const ids = competitors
       .filter((competitor) =>
-        latLngToCell(competitor.lat, competitor.lng, h3Resolution) === selectedHexIndex,
+        latLngToCell(competitor.lat, competitor.lng, h3Resolution) === selectedHexIndexForRender,
       )
       .map((competitor) => competitor.id)
 
     return new Set(ids)
-  }, [h3Resolution, options?.competitors, selectedHexIndex])
+  }, [competitors, h3Resolution, selectedHexIndexForRender])
   const selectedHexCount =
-    selectedHexIndex == null
+    selectedHexIndexForRender == null
       ? null
-      : h3Hexagons.find((hex) => hex.h3Index === selectedHexIndex)?.count ?? 0
-
-  useEffect(() => {
-    if (!heatmapVisible) {
-      setSelectedHexIndex(null)
-    }
-  }, [heatmapVisible])
-
-  useEffect(() => {
-    setSelectedHexIndex(null)
-  }, [h3Resolution, h3Hexagons])
+      : h3Hexagons.find((hex) => hex.h3Index === selectedHexIndexForRender)?.count ?? 0
 
   // 현재 지도 레벨 — 클러스터/개별 모드 전환 판단
   // onZoomChanged가 Map의 level prop 변경 시에도 발생하므로 별도 리셋 불필요
@@ -291,7 +286,7 @@ export function KakaoMap({
 
   // 클러스터 모드: 마커 50개 이상 AND 레벨이 CLUSTER_MIN_LEVEL 초과
   // 개별 모드: !clusterMode — 두 모드가 절대 동시에 활성화되지 않음
-  const clusterMode = needsCluster && currentLevel > CLUSTER_MIN_LEVEL && !selectedHexIndex
+  const clusterMode = needsCluster && currentLevel > CLUSTER_MIN_LEVEL && !selectedHexIndexForRender
   const individualMode = !clusterMode
 
   const handleZoomChanged = useCallback((target: kakao.maps.Map) => {
@@ -300,6 +295,16 @@ export function KakaoMap({
 
   const clearHexSelection = useCallback(() => {
     setSelectedHexIndex(null)
+  }, [])
+
+  const toggleHeatmapVisible = useCallback(() => {
+    setHeatmapVisible((prev) => {
+      const next = !prev
+      if (!next) {
+        setSelectedHexIndex(null)
+      }
+      return next
+    })
   }, [])
 
   const handleMapRendered = useCallback(() => {
@@ -678,7 +683,7 @@ export function KakaoMap({
                 center={currentCenter}
                 radiusM={selectedRadius}
                 resolution={h3Resolution}
-                selectedHexIndex={selectedHexIndex}
+                selectedHexIndex={selectedHexIndexForRender}
                 onHexSelect={setSelectedHexIndex}
               />
             )}
@@ -718,7 +723,7 @@ export function KakaoMap({
         <div className="absolute top-2 right-2 z-10 flex flex-col gap-1.5">
           <button
             type="button"
-            onClick={() => setHeatmapVisible((prev) => !prev)}
+            onClick={toggleHeatmapVisible}
             className={[
               'border-border bg-background/90 flex items-center gap-1.5 rounded-md border px-2.5 py-1.5 text-[10px] font-medium shadow-sm backdrop-blur-sm transition-colors',
               heatmapVisible
