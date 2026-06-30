@@ -281,6 +281,31 @@ def _infer_category_from_text(text: str) -> str:
 
     return ''
 
+_LEGAL_RAG_KEYWORDS = (
+    '법령',
+    '인허가',
+    '허가',
+    '신고',
+    '영업신고',
+    '위생',
+    '위생교육',
+    '시설기준',
+    '보건소',
+    '사업자등록',
+    '등록증',
+    '계약',
+    '가맹계약',
+    '표준계약서',
+    '가맹금',
+    '위약금',
+    '계약해지',
+    '해지',
+    '반환',
+)
+
+
+def _should_use_rag(text: str) -> bool:
+    return any(keyword in text for keyword in _LEGAL_RAG_KEYWORDS)
 
 def _format_rag_context(rag_sources: list[dict]) -> str:
     return '\n\n'.join(
@@ -293,20 +318,63 @@ def _format_rag_context(rag_sources: list[dict]) -> str:
         for idx, source in enumerate(rag_sources)
     )
 
+def _format_rag_sources(rag_sources: list[dict]) -> str:
+    seen = set()
+    lines = []
 
-def _build_rag_prompt(current_category: str, rag_context: str) -> str:
+    for source in rag_sources:
+        title = (source.get("document_title") or "").replace("[pdf]", "").strip()
+        url = source.get("source_url")
+
+        if title in seen:
+            continue
+        seen.add(title)
+
+        if url:
+            lines.append(f"- {title}\n  {url}")
+        else:
+            lines.append(f"- {title}")
+
+    return "\n".join(lines)
+
+
+def _pick_distinct_rag_sources(rag_sources: list[dict], limit: int = 3) -> list[dict]:
+    seen = set()
+    picked = []
+
+    for source in rag_sources:
+        title = (source.get("document_title") or "").replace("[pdf]", "").strip()
+
+        if not title or title in seen:
+            continue
+
+        seen.add(title)
+        picked.append(source)
+
+        if len(picked) >= limit:
+            break
+
+    return picked
+
+def _build_rag_prompt(
+    current_category: str,
+    rag_context: str,
+    source_list: str,
+) -> str:
     return f"""
 다음은 업종 '{current_category}'와 관련된 RAG 참고 문서입니다.
 
 답변 규칙:
-1. 아래 RAG 문서를 최우선 근거로 사용하세요.
-2. 법령, 인허가, 창업 절차, 가맹계약, 가맹금, 위약금, 계약해지 질문은 상권 분석 데이터보다 RAG 문서를 우선하세요.
-3. 문서에 없는 내용은 추측하지 말고 "문서에서 확인되지 않습니다"라고 말하세요.
-4. 답변 마지막에는 반드시 아래 형식으로 출처를 작성하세요.
+1. 아래 RAG 문서를 근거로 사용하세요.
+2. 법령, 인허가, 창업 절차, 가맹계약, 가맹금, 위약금, 계약해지 질문은 RAG 문서를 우선하세요.
+3. 문서에서 직접 확인되는 내용은 구체적으로 답변하세요.
+4. 문서에서 일부만 확인되는 경우에는 확인되는 범위만 답변하고, 부족한 부분은 "문서에서 추가 확인이 필요합니다"라고 말하세요.
+5. 답변 마지막에는 출처를 직접 작성하지 마세요. 시스템이 자동으로 추가합니다.
 
-출처
-- 문서명 - 섹션명
+출처 목록:
+{source_list}
 
+RAG 참고 문서:
 {rag_context}
 """.strip()
 
@@ -329,16 +397,17 @@ async def _build_rag_message(
         print(f'[RAG] 검색 실패: {e}')
         return None, []
 
-    top_sources = rag_sources[:3]
+    top_sources = _pick_distinct_rag_sources(rag_sources, limit=3)
 
     if not top_sources:
         return None, []
 
     rag_context = _format_rag_context(top_sources)
-    rag_prompt = _build_rag_prompt(current_category, rag_context)
+    source_list = _format_rag_sources(top_sources)
+    rag_prompt = _build_rag_prompt(current_category, rag_context, source_list)
 
+    print([s["document_title"] for s in top_sources])
     return SystemMessage(content=rag_prompt), top_sources
-
 
 async def stream_ui(
     messages: list[UIMessage],
@@ -400,11 +469,15 @@ async def stream_ui(
         has_history = bool(state and state.values and state.values.get('messages'))
 
         rag_category = current_category or _infer_category_from_text(last_user_text)
+        should_use_rag = _should_use_rag(last_user_text)
 
-        rag_message, rag_sources = await _build_rag_message(
-            current_category=rag_category,
-            question=last_user_text,
-        )
+        if should_use_rag:
+            rag_message, rag_sources = await _build_rag_message(
+                current_category=rag_category,
+                question=last_user_text,
+            )
+        else:
+            rag_message, rag_sources = None, []
 
         if has_history:
             input_messages = _to_lc_messages([last_user])
@@ -437,16 +510,17 @@ async def stream_ui(
             {'type': 'step', 'label': '질문을 확인하고 있습니다...', 'done': True}
         )
 
-        if rag_sources:
+        if should_use_rag and rag_sources:
             yield _sse(
                 {
-                    'type': 'sources',
-                    'data': [
+                    "type": "sources",
+                    "data": [
                         {
-                            'title': source.get('document_title'),
-                            'section': source.get('section_title'),
-                            'file_path': source.get('file_path'),
-                            'file_type': source.get('file_type'),
+                            "title": source.get("document_title"),
+                            "section": source.get("section_title"),
+                            "file_path": source.get("file_path"),
+                            "file_type": source.get("file_type"),
+                            "url": source.get("source_url"),
                         }
                         for source in rag_sources
                     ],
@@ -542,9 +616,20 @@ async def stream_ui(
                             {'type': 'text-delta', 'id': part_id, 'delta': content}
                         )
 
-        if text_started:
-            yield _sse({'type': 'text-end', 'id': part_id})
-            yield _sse({'type': 'step', 'label': '답변 생성 완료!', 'done': True})
+            print("===============================")
+            print("text_started =", text_started)
+            print("should_use_rag =", should_use_rag)
+            print("rag_sources =", len(rag_sources))
+            print("===============================")
+            if text_started:
+                if should_use_rag and rag_sources:
+                    source_list = _format_rag_sources(rag_sources)
+                    citation_text = f'\n\n출처\n{source_list}'
+                    text_buffer.append(citation_text)
+                    yield _sse({'type': 'text-delta', 'id': part_id, 'delta': citation_text})
+
+                yield _sse({'type': 'text-end', 'id': part_id})
+                yield _sse({'type': 'step', 'label': '답변 생성 완료!', 'done': True})
 
         _log_response(
             thread_id,

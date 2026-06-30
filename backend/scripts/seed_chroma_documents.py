@@ -16,6 +16,7 @@ BASE_DIR = Path(__file__).resolve().parents[1]
 RAG_DIR = BASE_DIR / "data" / "rag"
 MAP_CSV = RAG_DIR / "rag_map.csv"
 CHROMA_DIR = BASE_DIR / "data" / "chroma"
+SOURCE_CSV = RAG_DIR / "rag_sources.csv"
 
 COLLECTION_NAME = "business_rag"
 
@@ -178,6 +179,18 @@ def collect_files(include_paths: list[str]) -> list[Path]:
 
     return sorted(set(files))
 
+def load_source_urls() -> dict[str, str]:
+    if not SOURCE_CSV.exists():
+        return {}
+
+    with SOURCE_CSV.open("r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+
+        return {
+            row["document_title"].strip(): row["source_url"].strip()
+            for row in reader
+            if row.get("document_title") and row.get("source_url")
+        }
 
 def reset_chroma() -> chromadb.Collection:
     if CHROMA_DIR.exists():
@@ -194,6 +207,13 @@ def main():
 
     openai_client = OpenAI(api_key=os.environ["OPENAI_API_KEY"])
     collection = reset_chroma()
+
+    source_map = {}
+
+    with (RAG_DIR / "rag_sources.csv").open("r", encoding="utf-8-sig") as f:
+        reader = csv.DictReader(f)
+        for row in reader:
+            source_map[row["document_title"].strip()] = row["source_url"].strip()
 
     total_chunks = 0
 
@@ -213,6 +233,7 @@ def main():
             for file_path in files:
                 relative_path = file_path.relative_to(BASE_DIR).as_posix()
                 document_title = file_path.stem
+                source_url = source_map.get(document_title, "")
 
                 print(f"[RAG] 읽는 중: {relative_path}")
 
@@ -270,6 +291,7 @@ def main():
                         "file_type": file_type,
                         "section_title": chunk["section_title"],
                         "chunk_index": idx,
+                        "source_url": source_url,
                     })
 
                 if ids:
