@@ -5,6 +5,7 @@ import { useAgentChat } from '@/hooks/useAgentChat'
 import { useGeolocation } from '@/hooks/use-geolocation'
 import { useAnalysis } from '@/hooks/use-analysis'
 import { useAnalysisContext } from '@/store/analysisContext'
+import { useAnalysisResult } from '@/store/analysisResult'
 import { AgentHeader } from './AgentHeader'
 import { MessageThread } from './MessageThread'
 import { QuickStartButtons } from './QuickStartButtons'
@@ -16,18 +17,32 @@ import { reverseGeocode } from '@/lib/geocode'
 import { beginMapUpdate } from '@/store/analysisResult'
 import { isValidCategory } from '@/lib/category'
 
-export function AgentPanel() {
+interface AgentPanelProps {
+  onOpenReportTab?: () => void
+  onReportAnnouncementVisibleChange?: (visible: boolean) => void
+}
+
+export function AgentPanel({
+  onOpenReportTab,
+  onReportAnnouncementVisibleChange,
+}: AgentPanelProps) {
   const { status: geoStatus, requestLocation } = useGeolocation()
   const { analysisContext, setAnalysisContext } = useAnalysisContext()
+  const { report } = useAnalysisResult()
 
   // 에러 전용 로컬 메시지 (LLM 호출 없이 즉시 삽입)
   const [localMessages, setLocalMessages] = useState<AgentMessage[]>([])
+  const reportAnnouncementIdRef = useRef<string | null>(null)
+  const reportAnnouncementPendingRef = useRef<string | null>(null)
+  const reportAnnouncedRef = useRef<string | null>(null)
 
   const addAgentMessage = useCallback((msg: Omit<AgentMessage, 'id' | 'role'>) => {
+    const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
     setLocalMessages((prev) => [
       ...prev,
-      { id: `local-${prev.length}-${msg.isError ? 'err' : 'msg'}`, role: 'agent' as const, ...msg },
+      { id, role: 'agent' as const, ...msg },
     ])
+    return id
   }, [])
 
   const handleChatError = useCallback(
@@ -129,6 +144,39 @@ export function AgentPanel() {
     prevRadiusRef.current = nextRadius
   }, [analysisContext.radius])
 
+  useEffect(() => {
+    const generatedAt = report?.meta.generated_at ?? null
+
+    if (!generatedAt) {
+      reportAnnouncementPendingRef.current = null
+      reportAnnouncedRef.current = null
+      reportAnnouncementIdRef.current = null
+      onReportAnnouncementVisibleChange?.(false)
+      return
+    }
+
+    if (isLoading) {
+      reportAnnouncementPendingRef.current = generatedAt
+      return
+    }
+
+    const shouldAnnounce =
+      reportAnnouncedRef.current !== generatedAt ||
+      reportAnnouncementPendingRef.current === generatedAt
+
+    if (shouldAnnounce) {
+      const id = addAgentMessage({
+        content:
+          '분석이 완료되었습니다. 리포트에서 경쟁 현황, 생활인구, 고객 분석 결과를 확인하세요.',
+        confirmButtons: [{ label: '리포트 확인하기', variant: 'primary', action: 'open_report' }],
+      })
+      reportAnnouncementIdRef.current = id
+      reportAnnouncedRef.current = generatedAt
+      reportAnnouncementPendingRef.current = null
+      onReportAnnouncementVisibleChange?.(true)
+    }
+  }, [report, isLoading, addAgentMessage, onReportAnnouncementVisibleChange])
+
   const [initMessage, setInitMessage] = useState<AgentMessage>(() => ({
     ...INITIAL_MESSAGE,
     isError: false,
@@ -153,6 +201,20 @@ export function AgentPanel() {
   const handleConfirmAction = useCallback(
     async (action: string) => {
       switch (action) {
+        case 'open_report':
+          if (reportAnnouncementIdRef.current) {
+            setLocalMessages((prev) =>
+              prev.map((message) =>
+                message.id === reportAnnouncementIdRef.current
+                  ? { ...message, confirmedAction: action }
+                  : message,
+              ),
+            )
+          }
+          onOpenReportTab?.()
+          onReportAnnouncementVisibleChange?.(false)
+          break
+
         case 'retry_analysis':
           setLocalMessages([])
           retry()
@@ -236,7 +298,14 @@ export function AgentPanel() {
         }
       }
     },
-    [retry, append, requestLocation, setAnalysisContext],
+    [
+      retry,
+      append,
+      requestLocation,
+      setAnalysisContext,
+      onOpenReportTab,
+      onReportAnnouncementVisibleChange,
+    ],
   )
 
   // SDK 메시지 + 로컬 에러 메시지 병합
