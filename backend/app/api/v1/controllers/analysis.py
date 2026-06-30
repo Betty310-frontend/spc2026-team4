@@ -112,12 +112,13 @@ async def get_competition_percentile(
 
 @router.get('/h3-hexagons')
 async def get_h3_hexagons(
-    station: str = Query(..., examples=['연남동']),
+    lat: float = Query(..., examples=[37.5611]),
+    lng: float = Query(..., examples=[126.9231]),
     category: str = Query(..., examples=['카페']),
     radius: int = Query(500, ge=100, le=2000, examples=[500]),
     resolution: int = Query(9, ge=7, le=10, examples=[9]),
     db: AsyncSession = Depends(get_async_db),
     redis: Redis = Depends(get_redis_client),
 ) -> list[H3HexagonItem]:
-    hexagons = await run_h3_hexagons(db, redis, station, category, radius, resolution)
+    hexagons = await run_h3_hexagons(db, redis, lat, lng, category, radius, resolution)
     return [H3HexagonItem(**item) for item in hexagons]
