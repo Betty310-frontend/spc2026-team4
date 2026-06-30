@@ -103,7 +103,7 @@ jobs:
     name: Deploy → Dev Server (develop)
     needs: build-push
     runs-on: ubuntu-latest
-    if: github.event_name == 'push' && github.ref == 'refs/heads/develop'
+    if: github.event_name == 'push' && (github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/deploy/test')
     environment: development
 
     steps:
