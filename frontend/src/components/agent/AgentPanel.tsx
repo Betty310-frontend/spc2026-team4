@@ -35,6 +35,7 @@ export function AgentPanel({
   const reportAnnouncementIdRef = useRef<string | null>(null)
   const reportAnnouncementPendingRef = useRef<string | null>(null)
   const reportAnnouncedRef = useRef<string | null>(null)
+  const [hiddenIndustryPromptId, setHiddenIndustryPromptId] = useState<string | null>(null)
 
   const addAgentMessage = useCallback((msg: Omit<AgentMessage, 'id' | 'role'>) => {
     const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -193,10 +194,21 @@ export function AgentPanel({
   const handleQuickStart = (text: string) => {
     setShowQuickStart(false)
     setLocalMessages([])
+    setHiddenIndustryPromptId(null)
     startNewAnalysis()
     setInitMessage({ ...INITIAL_MESSAGE, isError: false })
     void append(text)
   }
+
+  const handleIndustryQuickSelect = useCallback(
+    (text: string, messageId: string) => {
+      setHiddenIndustryPromptId(messageId)
+      setShowQuickStart(false)
+      setLocalMessages([])
+      void append(text)
+    },
+    [append],
+  )
 
   const handleConfirmAction = useCallback(
     async (action: string) => {
@@ -321,6 +333,8 @@ export function AgentPanel({
         <MessageThread
           messages={allMessages}
           onConfirmAction={handleConfirmAction}
+          onIndustryQuickSelect={handleIndustryQuickSelect}
+          hiddenIndustryPromptId={hiddenIndustryPromptId}
           isStreaming={isLoading}
           disableConfirm={geoStatus === 'loading'}
         />

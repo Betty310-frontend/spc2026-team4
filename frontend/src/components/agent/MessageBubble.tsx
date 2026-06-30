@@ -2,6 +2,7 @@ import { cn } from '@/lib/utils'
 import { Button } from '@/components/ui/button'
 import { AgentMessage, UserMessage } from '@/types/message'
 import { AgentMarkdown } from './AgentMarkdown'
+import { IndustryQuickButtons } from './IndustryQuickButtons'
 import { ChevronRight } from 'lucide-react'
 
 interface MessageBubbleProps {
@@ -10,6 +11,17 @@ interface MessageBubbleProps {
   isError?: boolean
   buttonsDisabled?: boolean
   onConfirmAction?: (action: string) => void
+  onIndustryQuickSelect?: (text: string, messageId: string) => void
+  hiddenIndustryPromptId?: string | null
+}
+
+function isIndustryQuestion(content: string) {
+  const normalized = content.replace(/\s+/g, '')
+  return (
+    normalized.includes('어떤업종을생각하고계신가요') ||
+    normalized.includes('어떤업종을생각하고계신가요?') ||
+    normalized.includes('업종을생각하고계신가요')
+  )
 }
 
 export function MessageBubble({
@@ -18,6 +30,8 @@ export function MessageBubble({
   isError = false,
   buttonsDisabled,
   onConfirmAction,
+  onIndustryQuickSelect,
+  hiddenIndustryPromptId,
 }: MessageBubbleProps) {
   if (message.role === 'user') {
     return (
@@ -32,6 +46,11 @@ export function MessageBubble({
 
   const showButtons =
     message.confirmButtons && message.confirmButtons.length > 0 && !message.confirmedAction
+  const showIndustryButtons =
+    !isError &&
+    !message.confirmedAction &&
+    hiddenIndustryPromptId !== message.id &&
+    isIndustryQuestion(message.content)
 
   return (
     <div className="flex flex-col items-start">
@@ -55,6 +74,16 @@ export function MessageBubble({
           <span className="bg-foreground/70 ml-0.5 inline-block h-3.5 w-0.5 animate-pulse align-middle rounded-full" />
         )}
       </div>
+
+      {showIndustryButtons && onIndustryQuickSelect && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          <span className="text-muted-foreground text-[10px]">빠른 선택</span>
+          <IndustryQuickButtons
+            disabled={buttonsDisabled}
+            onSelect={(text) => onIndustryQuickSelect(text, message.id)}
+          />
+        </div>
+      )}
 
       {showButtons && (
         <div className="mt-2 flex flex-wrap gap-2">
