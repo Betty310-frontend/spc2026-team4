@@ -2,8 +2,10 @@
 
 import { Card, CardContent } from '@/components/ui/card'
 import { Skeleton } from '@/components/ui/skeleton'
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAnalysisResult, type MetricCard } from '@/store/analysisResult'
 import { getMetricBadgeColor } from '@/lib/metric-badge'
+import { Info } from 'lucide-react'
 
 type MetricKey = 'competitors' | 'density' | 'population'
 type BadgeDirection = 'positive' | 'negative'
@@ -27,7 +29,7 @@ const METRIC_META: Record<
     badgeDirection: 'negative',
   },
   population: {
-    label: '유동인구',
+    label: '생활인구',
     unit: '명',
     accent: '#5C5FC4',
     valueTone: 'text-[#1F2366]',
@@ -107,8 +109,22 @@ function MetricValue({
             {card.badge}
           </span>
         )}
+        {card.hint && (
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <button
+                type="button"
+                className="inline-flex items-center gap-1 rounded-full bg-[#EDEDFD] px-2 py-0.5 text-[10px] font-medium text-[#1F2080]"
+              >
+                <Info className="h-3 w-3" />
+                데이터 준비중
+              </button>
+            </TooltipTrigger>
+            <TooltipContent>{card.hint}</TooltipContent>
+          </Tooltip>
+        )}
         {(card.status === 'fallback' || card.isFallback) && (
-          <span className="inline-flex items-center rounded-full bg-amber-50 px-2 py-0.5 text-[10px] font-medium text-amber-700">
+          <span className="inline-flex items-center rounded-full bg-[#FFF3A3] px-2 py-0.5 text-[10px] font-medium text-[#7A6E00]">
             유사 지역 기준
           </span>
         )}

@@ -126,10 +126,10 @@ function CompetitorMarkerLayer({
 
     let frame1 = 0
     let frame2 = 0
-    let timeoutId: ReturnType<typeof setTimeout> | null = null
+    let timeoutId: number | null = null
     frame1 = requestAnimationFrame(() => {
       frame2 = requestAnimationFrame(() => {
-        timeoutId = setTimeout(() => {
+        timeoutId = window.setTimeout(() => {
           timeoutId = null
           onRendered?.()
         }, 0)
@@ -152,7 +152,7 @@ function CompetitorMarkerLayer({
   )
 }
 
-export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
+export function KakaoMap({ options, userLocation, isLoading, isActive = true }: KakaoMapProps) {
   const [sdkLoading] = useKakaoLoader()
   const { analysisContext, setAnalysisContext } = useAnalysisContext()
   const { mapSync } = useAnalysisResult()
@@ -226,6 +226,31 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
       mapInstance.setLevel(targetLevel, { animate: true })
     }
   }, [mapInstance, selectedRadius])
+
+  useEffect(() => {
+    if (!isActive || !mapInstance) return
+
+    let frame1 = 0
+    let frame2 = 0
+    let timeoutId: number | null = null
+
+    frame1 = window.requestAnimationFrame(() => {
+      frame2 = window.requestAnimationFrame(() => {
+        mapInstance.relayout()
+
+        timeoutId = window.setTimeout(() => {
+          mapInstance.relayout()
+          timeoutId = null
+        }, 0)
+      })
+    })
+
+    return () => {
+      window.cancelAnimationFrame(frame1)
+      window.cancelAnimationFrame(frame2)
+      if (timeoutId != null) window.clearTimeout(timeoutId)
+    }
+  }, [isActive, mapInstance])
 
   const syncOverlays = useCallback((center: CenterCoords) => {
     if (!window.kakao?.maps) return
@@ -448,7 +473,7 @@ export function KakaoMap({ options, userLocation, isLoading }: KakaoMapProps) {
   // <Map>을 조건부로 마운트/언마운트하면 sdkLoading 전환 시점에 Kakao SDK 내부
   // 객체에 .state 접근 충돌이 발생한다. 항상 마운트 유지하고 overlay로 로딩 표시.
   return (
-    <div className="relative min-h-0 flex-1">
+    <div className="relative h-full min-h-0 w-full">
       <Map
         center={currentCenter}
         className="h-full w-full"

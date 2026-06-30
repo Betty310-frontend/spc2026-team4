@@ -4,6 +4,7 @@ import {
   normalizeCompetitors,
   type CompetitorsApiResponse,
 } from '@/lib/agent-event-bridge'
+import { formatNumber, formatPopulation } from '@/lib/number-format'
 import { getTierBadgeLabel } from '@/lib/metric-badge'
 import type {
   CalcCompetitionPercentileToolResponse,
@@ -14,11 +15,6 @@ import type {
 } from '@/types/api'
 
 type MetricKey = 'competitors' | 'density' | 'population'
-
-function formatNumber(value: number | null | undefined): string {
-  if (value == null || !Number.isFinite(value)) return '—'
-  return new Intl.NumberFormat('ko-KR').format(value)
-}
 
 function setSearchCompetitorMetrics(
   result: SearchCompetitorsToolResponse,
@@ -52,7 +48,7 @@ function setSearchCompetitorMetrics(
   if (population != null) {
     updateMetric('population', {
       status: 'done',
-      value: formatNumber(population),
+      value: formatPopulation(population),
       unit: '명',
       badge: metrics.top_population_age ?? undefined,
       badgeTier: 'info',
@@ -60,9 +56,10 @@ function setSearchCompetitorMetrics(
   } else {
     updateMetric('population', {
       status: 'fallback',
-      value: '—',
-      unit: '명',
+      value: '데이터 준비중',
+      unit: '',
       isFallback: true,
+      hint: '시간대별 생활인구 곡선으로 대체 판단하세요',
     })
   }
 }
@@ -95,8 +92,8 @@ export function handleToolResult(
       const populationPercentile = 'percentile' in r ? r.percentile : null
       updateMetric('population', {
         status: avgPeakPopulation == null ? 'fallback' : 'done',
-        value: formatNumber(avgPeakPopulation),
-        unit: '명',
+        value: avgPeakPopulation == null ? '데이터 준비중' : formatPopulation(avgPeakPopulation),
+        unit: avgPeakPopulation == null ? '' : '명',
         badge:
           'data_source' in r && 'base_date' in r
             ? `${r.data_source} · ${r.base_date}`
@@ -114,6 +111,7 @@ export function handleToolResult(
         source:
           'data_source' in r && 'base_date' in r ? `${r.data_source} · ${r.base_date}` : undefined,
         isFallback: avgPeakPopulation == null || ('fallback' in r && r.fallback),
+        hint: avgPeakPopulation == null ? '시간대별 생활인구 곡선으로 대체 판단하세요' : undefined,
       })
       break
     }
