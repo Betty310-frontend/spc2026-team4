@@ -36,10 +36,6 @@ db_data/
 # macOS
 .DS_Store
 
-# deploy
-depoly.prod.sh
-depoly.dev.sh
-
 # local-only dev files
 CLAUDE.md
 docker-compose.override.yml
@@ -47,7 +43,8 @@ docker-compose.local.yml
 nginx.local.conf
 docs/
 data/
-deploy*.sh
+scripts/
+deploy.*.sh
 
 # SSL 인증서 (로컬 자가서명)
 certs/

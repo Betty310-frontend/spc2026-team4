@@ -1,20 +1,20 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 
-# from pathlib import Path
 import uvicorn
 from dotenv import load_dotenv
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import HTMLResponse
 
-# from fastapi.responses import HTMLResponse
 from app.api.v1.api import router as api_v1_router
 from app.core.config import get_settings
 from app.core.database import get_engine, init_engine
 from app.core.redis import init_redis_pool
 
-# _REPORTVIEW_HTML = (Path(__file__).parent / 'reportview.html').read_text(
-#     encoding='utf-8'
-# )
+_REPORTVIEW_HTML = (Path(__file__).parent / 'reportview.html').read_text(
+    encoding='utf-8'
+)
 
 
 @asynccontextmanager
@@ -43,9 +43,9 @@ async def index():
     return {'status': 'ok', 'service': 'spc-team-api'}
 
 
-# @app.get('/reportview', response_class=HTMLResponse)
-# async def reportview():
-#     return _REPORTVIEW_HTML
+@app.get('/reportview', response_class=HTMLResponse)
+async def reportview():
+    return _REPORTVIEW_HTML
 
 
 def start_dev():
