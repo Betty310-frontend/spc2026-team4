@@ -25,6 +25,7 @@ from app.services.market_data import (
     get_all_dong_population_avgs,
     get_data_reference_month,
     get_monthly_avg_sales,
+    get_peak_sales_slot_by_dong,
     get_population_flow,
     get_population_hourly_by_dong,
 )
@@ -39,19 +40,36 @@ from app.services.store import (
 )
 from app.services.summarize import build_summarize
 
-# 업종별 시간대 가중치 레이블 (FE 표시용)
-_TIME_WEIGHT_LABELS: dict[str, list[str]] = {
-    '카페': ['11~17시 평일', '13~18시 주말 ×2'],
-    '음식점': ['11~14시, 17~21시 평일', '11~21시 주말'],
-    '한식': ['11~14시, 17~21시 평일', '11~21시 주말'],
-    '중식': ['11~14시, 17~21시 평일', '11~21시 주말'],
-    '일식': ['11~14시, 17~21시 평일', '11~21시 주말'],
-    '양식': ['11~14시, 17~21시 평일', '11~21시 주말'],
-    '미용실': ['10~19시 평일', '10~18시 주말'],
-    '학원': ['15~20시 평일', '10~14시 주말'],
-    '치킨': ['17~22시 평일', '17~22시 주말'],
-    '주점': ['18~24시 평일', '18~24시 주말'],
+# 매출 시간대 구간 → 생활인구 시간 슬롯 매핑
+_SLOT_TO_HOURS: dict[str, tuple[str, ...]] = {
+    '00~06': ('00', '01', '02', '03', '04', '05'),
+    '06~11': ('06', '07', '08', '09', '10'),
+    '11~14': ('11', '12', '13'),
+    '14~17': ('14', '15', '16'),
+    '17~21': ('17', '18', '19', '20'),
+    '21~24': ('21', '22', '23'),
 }
+
+# 업종별 핵심 시간대 폴백 (매출 데이터 없을 때)
+_CATEGORY_PEAK_HOURS: dict[str, tuple[str, ...]] = {
+    '카페': ('11', '12', '13', '14', '15', '16', '17'),
+    '빵/도넛': ('09', '10', '11', '12', '13', '14', '15'),
+    '백반/한정식': ('11', '12', '13', '17', '18', '19', '20'),
+    '김밥/만두/분식': ('11', '12', '13', '17', '18', '19', '20'),
+    '국/탕/찌개류': ('11', '12', '13', '17', '18', '19', '20'),
+    '일식 회/초밥': ('11', '12', '13', '17', '18', '19', '20'),
+    '돼지고기 구이/찜': ('17', '18', '19', '20', '21'),
+    '요리 주점': ('18', '19', '20', '21', '22', '23'),
+    '치킨': ('17', '18', '19', '20', '21', '22'),
+    '미용실': ('10', '11', '12', '13', '14', '15', '16', '17', '18', '19'),
+    '피부 관리실': ('10', '11', '12', '13', '14', '15', '16', '17', '18', '19'),
+    '네일숍': ('10', '11', '12', '13', '14', '15', '16', '17', '18', '19'),
+    '입시·교과학원': ('15', '16', '17', '18', '19', '20'),
+    '요가/필라테스 학원': ('06', '07', '08', '18', '19', '20', '21'),
+    '편의점': ('07', '08', '09', '12', '13', '17', '18', '19', '20', '21'),
+}
+
+# 업종별 시간대 가중치 레이블 (FE 표시용)
 
 
 def _format_peak_hours(peak_hours: tuple[str, ...]) -> str:
@@ -130,6 +148,15 @@ async def run_market_analysis(
         coords = await geocode_station(
             station, get_settings().kakao_rest_api_key, redis
         )
+        if coords.get('geocode_failed'):
+            return {
+                'error': 'geocode_failed',
+                'station': station,
+                'message': (
+                    f"'{station}' 위치를 찾을 수 없습니다. "
+                    '정확한 역명(예: 압구정로데오역)이나 동네명을 입력해 주세요.'
+                ),
+            }
     geohash_str = encode_geohash(coords['lat'], coords['lng'], precision=7)
     cache_key = f'market:v3:{cache_category}:{geohash_str}:{radius}'
 
@@ -140,26 +167,28 @@ async def run_market_analysis(
         competitors_raw = await db_search_competitors(
             db, coords['lat'], coords['lng'], radius, cat_filter
         )
-        seoul_total = count_seoul_category(cat_filter)
+        seoul_total = await count_seoul_category(db, cat_filter)
         sales_service_codes = cat_filter.sales_service_codes if cat_filter else ()
-        sales = get_monthly_avg_sales(dong_codes, sales_service_codes)
-        population = get_population_flow(dong_codes, ())
+        sales = await get_monthly_avg_sales(db, dong_codes, sales_service_codes)
+        population = await get_population_flow(db, dong_codes, ())
 
+        same_count = sum(1 for c in competitors_raw if c.get('type') == 'same')
+        similar_count = sum(1 for c in competitors_raw if c.get('type') == 'similar')
         competitor_count = len(competitors_raw)
         competition_percentile = calc_competition_percentile(
-            competitor_count, radius, seoul_total
+            same_count, radius, seoul_total
         )
 
         total_sales_amt = sales.get('monthly_avg_sales_amt')
         total_sales_cnt = sales.get('monthly_avg_sales_cnt')
         per_store_est_amt = (
-            int(total_sales_amt / competitor_count)
-            if (total_sales_amt and competitor_count > 0)
+            int(total_sales_amt / same_count)
+            if (total_sales_amt and same_count > 0)
             else None
         )
         per_store_est_cnt = (
-            int(total_sales_cnt / competitor_count)
-            if (total_sales_cnt and competitor_count > 0)
+            int(total_sales_cnt / same_count)
+            if (total_sales_cnt and same_count > 0)
             else None
         )
 
@@ -170,9 +199,11 @@ async def run_market_analysis(
             'coords': coords,
             'metrics': {
                 'competitor_count': competitor_count,
+                'same_count': same_count,
+                'similar_count': similar_count,
                 'competition_percentile': competition_percentile,
                 'closure_rate_change': None,
-                'data_reference_month': get_data_reference_month(),
+                'data_reference_month': await get_data_reference_month(db),
                 'monthly_avg_sales_amt': total_sales_amt,
                 'monthly_avg_sales_cnt': total_sales_cnt,
                 'per_store_est_amt': per_store_est_amt,
@@ -194,12 +225,18 @@ async def run_market_analysis(
                 'top_population_age': population.get('top_population_age'),
             },
             'competitors': competitors_raw,
-            'h3_hexagons': build_h3_hexagons(competitors_raw),
+            'h3_hexagons': build_h3_hexagons(
+                competitors_raw,
+                center_lat=coords['lat'],
+                center_lng=coords['lng'],
+                radius_m=radius,
+            ),
             'summarize': build_summarize(
                 station,
                 radius,
                 category,
-                competitor_count,
+                same_count,
+                similar_count,
                 competition_percentile,
                 per_store_est_amt=per_store_est_amt,
                 per_store_est_cnt=per_store_est_cnt,
@@ -223,7 +260,8 @@ async def run_market_analysis(
                 station,
                 radius,
                 category,
-                competitor_count,
+                same_count,
+                similar_count,
                 competition_percentile,
                 primary_dong_name,
                 sales,
@@ -255,6 +293,8 @@ async def run_get_population(
         coords = await geocode_station(
             station, get_settings().kakao_rest_api_key, redis
         )
+        if coords.get('geocode_failed'):
+            return {'error': 'geocode_failed', 'station': station}
     geohash_str = encode_geohash(coords['lat'], coords['lng'], precision=7)
     cache_key = population_key(cache_category, geohash_str, radius)
 
@@ -262,7 +302,7 @@ async def run_get_population(
         dong_codes, primary_dong_name = await get_dong_codes_in_radius(
             db, coords['lat'], coords['lng'], radius
         )
-        population = get_population_flow(dong_codes, ())
+        population = await get_population_flow(db, dong_codes, ())
         return {
             'station': station,
             'dong_name': primary_dong_name,
@@ -275,7 +315,7 @@ async def run_get_population(
             'population_by_age_ratio': population.get('population_by_age_ratio'),
             'top_population_age': population.get('top_population_age'),
             'data_source': '서울 열린데이터 광장',
-            'base_date': get_data_reference_month(),
+            'base_date': await get_data_reference_month(db),
         }
 
     return await cache_or_compute(redis, cache_key, _compute)
@@ -290,18 +330,27 @@ async def run_get_population_by_dong(
 ) -> dict:
     """행정동 코드 기반 생활인구 조회 — REST /population 엔드포인트 전용."""
     cat_filter = get_category_filter(category)
-    peak_hours = tuple(time_slots) if time_slots else ()
     display_name = cat_filter.display_name if cat_filter else category
+    peak_slot: str | None = None
+    if time_slots:
+        peak_hours = tuple(time_slots)
+    else:
+        sales_codes = cat_filter.sales_service_codes if cat_filter else ()
+        peak_slot = await get_peak_sales_slot_by_dong(db, dong_code, sales_codes)
+        if peak_slot:
+            peak_hours = _SLOT_TO_HOURS.get(peak_slot, ())
+        else:
+            peak_hours = _CATEGORY_PEAK_HOURS.get(display_name, ())
     cache_key = population_dong_key(dong_code, display_name, peak_hours)
 
     async def _compute() -> dict:
-        dong_name = get_dong_name_by_code(dong_code)
+        dong_name = await get_dong_name_by_code(db, dong_code)
 
         if not peak_hours:
             return {
                 'dong_code': dong_code,
                 'dong_name': dong_name,
-                'base_date': get_data_reference_month(),
+                'base_date': await get_data_reference_month(db),
                 'data_source': '서울 열린데이터 광장',
                 'weighted_avg': None,
                 'percentile': None,
@@ -311,24 +360,26 @@ async def run_get_population_by_dong(
                 'data': [],
             }
 
-        pop_data = get_population_hourly_by_dong(dong_code, peak_hours)
+        peak_src = f'매출피크({peak_slot})' if peak_slot else '폴백'
+        print(
+            f'[population] dong={dong_code}({dong_name}) category={display_name} peak_src={peak_src} peak_hours={list(peak_hours)}'
+        )
+        pop_data = await get_population_hourly_by_dong(db, dong_code, peak_hours)
         weighted_avg = pop_data['weighted_avg']
         fallback = weighted_avg is None
         fallback_reason = '해당 행정동 생활인구 데이터 없음' if fallback else None
 
         percentile = None
         if weighted_avg is not None:
-            all_avgs = get_all_dong_population_avgs(peak_hours)
+            all_avgs = await get_all_dong_population_avgs(db, peak_hours)
             percentile = calc_percentile(weighted_avg, all_avgs)
 
-        time_weights_applied = _TIME_WEIGHT_LABELS.get(
-            display_name, [_format_peak_hours(peak_hours)]
-        )
+        time_weights_applied = [_format_peak_hours(peak_hours)] if peak_hours else []
 
         return {
             'dong_code': dong_code,
             'dong_name': dong_name,
-            'base_date': get_data_reference_month(),
+            'base_date': await get_data_reference_month(db),
             'data_source': '서울 열린데이터 광장',
             'weighted_avg': weighted_avg,
             'percentile': percentile,
@@ -357,7 +408,7 @@ async def run_competition_percentile(
 
     async def _compute() -> dict:
         competitors_raw = await db_search_competitors(db, lat, lng, radius, cat_filter)
-        seoul_total = count_seoul_category(cat_filter)
+        seoul_total = await count_seoul_category(db, cat_filter)
         competitor_count = len(competitors_raw)
         percentile = calc_competition_percentile(competitor_count, radius, seoul_total)
 
@@ -404,6 +455,8 @@ async def run_h3_hexagons(
     cat_filter = get_category_filter(category)
     cache_category = cat_filter.display_name if cat_filter else category
     coords = await geocode_station(station, get_settings().kakao_rest_api_key, redis)
+    if coords.get('geocode_failed'):
+        return []
     geohash_str = encode_geohash(coords['lat'], coords['lng'], precision=7)
     cache_key = h3_hexagons_key(cache_category, geohash_str, radius, resolution)
 
@@ -411,6 +464,12 @@ async def run_h3_hexagons(
         competitors = await db_search_competitors(
             db, coords['lat'], coords['lng'], radius, cat_filter
         )
-        return build_h3_hexagons(competitors, resolution=resolution)
+        return build_h3_hexagons(
+            competitors,
+            center_lat=coords['lat'],
+            center_lng=coords['lng'],
+            radius_m=radius,
+            resolution=resolution,
+        )
 
     return await cache_or_compute(redis, cache_key, _compute)

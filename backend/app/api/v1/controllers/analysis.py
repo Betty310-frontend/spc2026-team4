@@ -4,7 +4,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.deps import get_async_db, get_redis_client
 from app.core.category_map import get_category_filter
-from app.core.geo import resolve_coords
+from app.core.config import get_settings
+from app.core.geo import geocode_station
 from app.dto.analysis import (
     CenterCoords,
     CompetitionPercentileResponse,
@@ -41,7 +42,9 @@ async def get_competitors(
     if lat is not None and lng is not None:
         coords = {'lat': lat, 'lng': lng}
     else:
-        coords = resolve_coords(location)
+        coords = await geocode_station(
+            location, get_settings().kakao_rest_api_key, redis
+        )
 
     competitors = await search_competitors(
         db,
@@ -112,7 +115,7 @@ async def get_h3_hexagons(
     station: str = Query(..., examples=['연남동']),
     category: str = Query(..., examples=['카페']),
     radius: int = Query(500, ge=100, le=2000, examples=[500]),
-    resolution: int = Query(8, ge=7, le=9, examples=[8]),
+    resolution: int = Query(9, ge=7, le=10, examples=[9]),
     db: AsyncSession = Depends(get_async_db),
     redis: Redis = Depends(get_redis_client),
 ) -> list[H3HexagonItem]:

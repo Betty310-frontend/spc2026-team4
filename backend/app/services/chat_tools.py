@@ -9,6 +9,7 @@
 """
 
 import asyncio
+from typing import Literal
 
 from langchain_core.tools import tool
 from redis.asyncio import Redis
@@ -16,12 +17,29 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.core.config import get_settings
 from app.core.geo import geocode_station
-from app.core.masking import mask_name
 from app.services.analysis import (
     run_competition_percentile,
     run_get_population,
     run_market_analysis,
 )
+
+CategoryType = Literal[
+    '백반/한정식',
+    '카페',
+    '미용실',
+    '입시·교과학원',
+    '편의점',
+    '김밥/만두/분식',
+    '돼지고기 구이/찜',
+    '요리 주점',
+    '피부 관리실',
+    '일식 회/초밥',
+    '빵/도넛',
+    '치킨',
+    '네일숍',
+    '요가/필라테스 학원',
+    '국/탕/찌개류',
+]
 
 # 개별 도구 호출 타임아웃(초) — DB 또는 외부 API 응답 지연 시 hang 방지
 _TOOL_TIMEOUT = 25
@@ -39,7 +57,7 @@ def make_analysis_tools(
 
     @tool
     async def search_competitors(
-        station: str, category: str, radius: int = 500
+        station: str, category: CategoryType, radius: int = 500
     ) -> dict:
         """상권 종합 분석 — 경쟁업체·추정매출·생활인구를 한 번에 반환합니다.
         사용자가 업종·위치를 처음 언급하거나 변경할 때 반드시 이 도구를 먼저 호출합니다.
@@ -84,26 +102,32 @@ def make_analysis_tools(
                 'error': 'tool_timeout',
                 'message': f'{effective_station} 데이터 조회 시간이 초과됐습니다. 반경을 줄이거나 잠시 후 다시 시도해주세요.',
             }
+        if full.get('error') == 'geocode_failed':
+            return {
+                'error': 'geocode_failed',
+                'message': full['message'],
+            }
         m = full['metrics']
+        all_competitors = full.get('competitors', [])
         top_competitors = [
             {
                 'analysis_name': c['name'],
-                'display_name': mask_name(c['name']),
+                'display_name': c['name'],
                 'category': c.get('category', ''),
             }
-            for c in full.get('competitors', [])[:15]
+            for c in all_competitors[:15]
         ]
         # 지도 시각화용: 좌표는 포함, 상호명은 마스킹
         competitors_for_map = [
             {
                 'id': c.get('id'),
-                'name': mask_name(c['name']),
+                'name': c['name'],
                 'lat': c.get('lat'),
                 'lng': c.get('lng'),
                 'type': c.get('type', 'same'),
                 'category': c.get('category', ''),
             }
-            for c in full.get('competitors', [])
+            for c in all_competitors
         ]
         return {
             'summary': full.get('summary', ''),
@@ -121,6 +145,8 @@ def make_analysis_tools(
             'scope': full.get('scope', {}),
             'metrics': {
                 'competitor_count': m['competitor_count'],
+                'same_count': m.get('same_count'),
+                'similar_count': m.get('similar_count'),
                 'competition_percentile': m['competition_percentile'],
                 'monthly_avg_sales_amt': m.get('monthly_avg_sales_amt'),
                 'monthly_avg_sales_cnt': m.get('monthly_avg_sales_cnt'),
@@ -146,7 +172,7 @@ def make_analysis_tools(
 
     @tool
     async def get_population_flow(
-        station: str, category: str, radius: int = 500
+        station: str, category: CategoryType, radius: int = 500
     ) -> dict:
         """생활인구 단독 조회 — search_competitors 이후 인구 흐름만 추가로 확인할 때 호출합니다.
         첫 분석이나 매출 데이터가 필요한 경우에는 search_competitors를 사용하세요.
@@ -170,7 +196,7 @@ def make_analysis_tools(
 
     @tool
     async def calc_competition_percentile(
-        station: str, category: str, radius: int = 500
+        station: str, category: CategoryType, radius: int = 500
     ) -> dict:
         """경쟁 밀집도 퍼센타일만 빠르게 조회합니다.
         "이 동네 경쟁 심한가요?" 처럼 밀집도 수치만 필요할 때 호출합니다.
@@ -186,6 +212,11 @@ def make_analysis_tools(
                 coords = await geocode_station(
                     station, get_settings().kakao_rest_api_key, redis
                 )
+                if coords.get('geocode_failed'):
+                    return {
+                        'error': 'geocode_failed',
+                        'message': f"'{station}' 위치를 찾을 수 없습니다.",
+                    }
                 result = await run_competition_percentile(
                     db, redis, coords['lat'], coords['lng'], category, radius
                 )

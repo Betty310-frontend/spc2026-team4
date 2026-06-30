@@ -55,7 +55,8 @@ def build_summary_text(
     station,
     radius,
     category,
-    competitor_count,
+    same_count,
+    similar_count,
     competition_percentile,
     dong_name,
     sales,
@@ -64,9 +65,10 @@ def build_summary_text(
     per_store_est_cnt=None,
 ):
     dong_str = f' (행정동: {dong_name})' if dong_name else ''
+    similar_str = f', 유사업종 {similar_count}개' if similar_count > 0 else ''
     base = (
         f'{station}{dong_str} 반경 {radius}m 내 {category}: '
-        f'{competitor_count}개 영업 중, '
+        f'동일업종 {same_count}개{similar_str} 영업 중, '
         f'경쟁 밀집도 서울 {competition_percentile}퍼센타일.'
     )
     if per_store_est_amt is not None:

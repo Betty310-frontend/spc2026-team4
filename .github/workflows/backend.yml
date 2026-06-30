@@ -124,7 +124,7 @@ jobs:
           key: ${{ secrets.EC2_SSH_KEY_DEV }}
           source: /tmp/.env.clean
           target: /developers/app/backend/
-          strip_components: 2
+          strip_components: 1
 
       - name: SCP nginx.conf to dev server
         uses: appleboy/scp-action@v0.1.7
