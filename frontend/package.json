@@ -16,6 +16,8 @@
     "ai": "^6.0.205",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "html2canvas": "^1.4.1",
+    "jspdf": "^3.0.4",
     "lucide-react": "^1.18.0",
     "next": "16.2.9",
     "radix-ui": "^1.5.0",

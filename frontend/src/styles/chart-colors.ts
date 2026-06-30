@@ -1,0 +1,26 @@
+export const REPORT_CHART_COLORS = {
+  primary: '#2563EB',
+  secondary: '#0EA5E9',
+  tertiary: '#6366F1',
+  female: '#06B6D4',
+  male: '#3B82F6',
+  peakFill: '#DBEAFE',
+  warning: '#F59E0B',
+  danger: '#EF4444',
+  positive: '#10B981',
+  neutral: '#94A3B8',
+  grid: '#E5E7EB',
+  swot: {
+    strength: '#ECFDF5',
+    weakness: '#FEF2F2',
+    opportunity: '#EFF6FF',
+    threat: '#FFFBEB',
+  },
+  tones: {
+    safe: { bg: '#ECFDF5', text: '#047857' },
+    warn: { bg: '#FFFBEB', text: '#B45309' },
+    danger: { bg: '#FEF2F2', text: '#B91C1C' },
+    info: { bg: '#EFF6FF', text: '#1D4ED8' },
+    neutral: { bg: '#F8FAFC', text: '#475569' },
+  },
+} as const
