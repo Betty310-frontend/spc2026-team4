@@ -211,16 +211,13 @@ export function AnalysisResultProvider({ children }: { children: React.ReactNode
           },
         })
 
-        if (payload.center) {
-          dispatch({
-            type: 'SET_MAP_OPTIONS',
-            mapOptions: {
-              center: payload.center,
-              radius_m: payload.radiusM ?? 500,
-              competitors: payload.items,
-            },
-          })
-        }
+        dispatch({
+          type: 'SET_MAP_OPTIONS',
+          mapOptions: {
+            radius_m: payload.radiusM ?? 500,
+            competitors: payload.items,
+          },
+        })
       },
       reset: () => dispatch({ type: 'RESET' }),
       startLoading: (key: LoadingKey) => dispatch({ type: 'START_LOADING', key }),

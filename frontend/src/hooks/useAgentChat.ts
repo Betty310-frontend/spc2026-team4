@@ -35,6 +35,7 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
   const [input, setInput] = useState('')
   const analysisContextRef = useRef(analysisContext)
   const appliedCompetitorMessagesRef = useRef<Set<string>>(new Set())
+  const processedToolCallIdsRef = useRef<Set<string>>(new Set())
 
   // useChat options은 mount 시점에 클로저로 고정되므로 ref로 최신 콜백 유지
   const onChatErrorRef = useRef(onChatError)
@@ -85,7 +86,7 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
               }
             : null
 
-          if (center?.lat != null && center?.lng != null) {
+          if (center?.lat != null && center?.lng != null && analysisContextRef.current.center == null) {
             setAnalysisContext({ center: { lat: center.lat, lng: center.lng } })
           }
 
@@ -123,10 +124,19 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
           if (!('output' in part)) continue
           const p = part as {
             toolName?: string
+            toolCallId?: string
             input: unknown
             output: unknown
           }
           const toolName = p.toolName ?? part.type.replace(/^tool-/, '')
+
+          if (typeof p.toolCallId === 'string') {
+            if (processedToolCallIdsRef.current.has(p.toolCallId)) {
+              continue
+            }
+            processedToolCallIdsRef.current.add(p.toolCallId)
+          }
+
           handleToolResult(toolName, p.output, updateMetric, setReportData)
 
           // TODO: 에이전트 onFinish 콜백에서 파싱 결과를 setAnalysisContext로 주입
@@ -220,6 +230,7 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
     startNewAnalysis: () => {
       abortMapUpdate()
       appliedCompetitorMessagesRef.current.clear()
+      processedToolCallIdsRef.current.clear()
       reset()
       stopLoading('chat')
     },

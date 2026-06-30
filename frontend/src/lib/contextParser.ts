@@ -44,15 +44,8 @@ export function parseContextFromAssistantText(
   text: string,
   setAnalysisContext: (ctx: Partial<AnalysisContext>) => void,
 ) {
-  const locationMatch =
-    text.match(/(?:해당 위치는|위치는)\s*([가-힣0-9]+(?:역|동|가|로|리|읍|면|구))/) ??
-    text.match(/([가-힣0-9]+(?:역|동|가|로|리|읍|면|구))\s*(?:에\s*속합니다|에\s*속해 있습니다|입니다)/)
   const radiusMatch = extractRadiusFromText(text)
   const partial: Partial<AnalysisContext> = {}
-
-  if (locationMatch?.[1]) {
-    partial.location = locationMatch[1]
-  }
 
   if (radiusMatch != null) {
     partial.radius = radiusMatch

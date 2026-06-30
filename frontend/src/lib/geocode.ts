@@ -21,6 +21,26 @@ interface KakaoGeocoderServices {
       callback: (result: KakaoRegionCode[], status: string) => void,
     ) => void
   }
+  Places: new () => {
+    keywordSearch: (
+      query: string,
+      callback: (result: KakaoPlaceResult[], status: string) => void,
+      options?: { size?: number },
+    ) => void
+    addressSearch?: (
+      query: string,
+      callback: (result: KakaoPlaceResult[], status: string) => void,
+      options?: { size?: number },
+    ) => void
+  }
+}
+
+interface KakaoPlaceResult {
+  place_name?: string
+  address_name?: string
+  road_address_name?: string
+  x?: string
+  y?: string
 }
 
 interface KakaoMapsSdk {
@@ -38,6 +58,24 @@ function normalizeRegionCode(code: unknown): string | null {
   return code.slice(0, -2)
 }
 
+function buildLocationQueries(location: string): string[] {
+  const normalized = location.trim().replace(/\s+/g, ' ')
+  const candidates = [
+    normalized,
+    normalized.startsWith('서울') ? normalized : `서울 ${normalized}`,
+    normalized.startsWith('서울특별시') ? normalized : `서울특별시 ${normalized}`,
+  ]
+
+  return Array.from(new Set(candidates.filter(Boolean)))
+}
+
+function toCoords(result: KakaoPlaceResult): { lat: number; lng: number } | null {
+  const lat = Number(result.y)
+  const lng = Number(result.x)
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) return null
+  return { lat, lng }
+}
+
 /**
  * 카카오맵 SDK Geocoder — 좌표 → 행정동명 역지오코딩
  * REST API 키 불필요. use-kakao-loader에 'services' 라이브러리 포함 필수.
@@ -45,7 +83,7 @@ function normalizeRegionCode(code: unknown): string | null {
  */
 export function reverseGeocode(lat: number, lng: number): Promise<GeoResult | null> {
   return new Promise((resolve) => {
-    const kakaoMaps = (window as KakaoWindow).kakao?.maps
+    const kakaoMaps = (window as unknown as KakaoWindow).kakao?.maps
     const services = kakaoMaps?.services
 
     if (!services) {
@@ -84,5 +122,126 @@ export function reverseGeocode(lat: number, lng: number): Promise<GeoResult | nu
           .join(' '),
       })
     })
+  })
+}
+
+/**
+ * 위치 텍스트 → 좌표
+ * 1) 키워드 검색 우선
+ * 2) 실패 시 주소 검색
+ * 3) 둘 다 실패하면 null 반환
+ */
+export function resolveLocationToCenter(
+  location: string,
+): Promise<{ center: { lat: number; lng: number }; label: string; query: string } | null> {
+  return new Promise((resolve) => {
+    const kakaoMaps = (window as unknown as KakaoWindow).kakao?.maps
+    const services = kakaoMaps?.services
+
+    if (!services) {
+      console.warn('[geocode] kakao.maps.services 미로드 — services 라이브러리를 확인하세요.')
+      resolve(null)
+      return
+    }
+
+    const places = new services.Places()
+    const queries = buildLocationQueries(location)
+
+    const tryAddress = (index: number) => {
+      if (index >= queries.length) {
+        console.warn('[geocode] location resolve 실패', { location, queries })
+        resolve(null)
+        return
+      }
+
+      const query = queries[index]
+      console.log('[geocode] address search query', { location, query })
+
+      places.addressSearch?.(
+        query,
+        (result: KakaoPlaceResult[], status: string) => {
+          if (status !== services.Status.OK || !result.length) {
+            tryAddress(index + 1)
+            return
+          }
+
+          const coords = toCoords(result[0])
+          if (!coords) {
+            tryAddress(index + 1)
+            return
+          }
+
+          console.log('[geocode] address search result', {
+            location,
+            query,
+            place_name: result[0].place_name,
+            address_name: result[0].address_name,
+            road_address_name: result[0].road_address_name,
+            x: result[0].x,
+            y: result[0].y,
+          })
+
+          resolve({
+            center: coords,
+            label:
+              result[0].place_name ??
+              result[0].road_address_name ??
+              result[0].address_name ??
+              query,
+            query,
+          })
+        },
+        { size: 1 },
+      )
+    }
+
+    const tryKeyword = (index: number) => {
+      if (index >= queries.length) {
+        tryAddress(0)
+        return
+      }
+
+      const query = queries[index]
+      console.log('[geocode] keyword search query', { location, query })
+
+      places.keywordSearch(
+        query,
+        (result: KakaoPlaceResult[], status: string) => {
+          if (status !== services.Status.OK || !result.length) {
+            tryKeyword(index + 1)
+            return
+          }
+
+          const coords = toCoords(result[0])
+          if (!coords) {
+            tryKeyword(index + 1)
+            return
+          }
+
+          console.log('[geocode] keyword search result', {
+            location,
+            query,
+            place_name: result[0].place_name,
+            address_name: result[0].address_name,
+            road_address_name: result[0].road_address_name,
+            x: result[0].x,
+            y: result[0].y,
+          })
+
+          resolve({
+            center: coords,
+            label:
+              result[0].place_name ??
+              result[0].road_address_name ??
+              result[0].address_name ??
+              query,
+            query,
+          })
+        },
+        { size: 1 },
+      )
+    }
+
+    tryKeyword(0)
   })
 }
