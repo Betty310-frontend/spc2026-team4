@@ -8,6 +8,8 @@ import { ToolCallCard } from './ToolCallCard'
 interface MessageThreadProps {
   messages: ChatMessage[]
   onConfirmAction?: (action: string) => void
+  onIndustryQuickSelect?: (text: string, messageId: string) => void
+  hiddenIndustryPromptId?: string | null
   isStreaming?: boolean
   disableConfirm?: boolean
 }
@@ -15,6 +17,8 @@ interface MessageThreadProps {
 export function MessageThread({
   messages,
   onConfirmAction,
+  onIndustryQuickSelect,
+  hiddenIndustryPromptId,
   isStreaming,
   disableConfirm,
 }: MessageThreadProps) {
@@ -41,6 +45,8 @@ export function MessageThread({
             isError={msg.role === 'agent' && (msg as AgentMessage).isError === true}
             buttonsDisabled={disableConfirm}
             onConfirmAction={onConfirmAction}
+            onIndustryQuickSelect={onIndustryQuickSelect}
+            hiddenIndustryPromptId={hiddenIndustryPromptId}
           />
         )
       })}

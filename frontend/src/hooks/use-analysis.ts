@@ -6,11 +6,12 @@ import { useAnalysisResult, abortMapUpdate } from '@/store/analysisResult'
 import { fetchCompetitors, fetchPopulation, fetchCompetitionPercentile } from '@/lib/api-client'
 import { applyCompetitors, normalizeCompetitors } from '@/lib/agent-event-bridge'
 import { isValidCategory } from '@/lib/category'
-import { reverseGeocode } from '@/lib/geocode'
+import { reverseGeocode, resolveLocationToCenter } from '@/lib/geocode'
 import { getTierBadgeLabel } from '@/lib/metric-badge'
 import { getApiErrorMessage } from '@/constants/error-messages'
 import { formatNumber, formatPopulation } from '@/lib/number-format'
 import type { AgentMessage } from '@/types/message'
+import { ApiError } from '@/lib/retry'
 
 export interface AnalysisParams {
   위치: string
@@ -55,20 +56,42 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
 
       startLoading('analysis')
       try {
-        // Step 1: 경쟁업체 조회 (center 좌표 확보)
+        let resolvedCenter =
+          params.lat != null && params.lng != null
+            ? { lat: params.lat, lng: params.lng }
+            : null
+
+        if (!resolvedCenter) {
+          const locationResult = await resolveLocationToCenter(params.위치)
+          if (!locationResult) {
+            throw new ApiError(400, '위치 좌표를 찾지 못했습니다.')
+          }
+
+          resolvedCenter = locationResult.center
+          setAnalysisContextRef.current({
+            center: resolvedCenter,
+            fullLocationName: locationResult.label,
+          })
+        } else {
+          setAnalysisContextRef.current({
+            center: resolvedCenter,
+          })
+        }
+
+        // Step 1: 경쟁업체 조회 (확정 좌표 사용)
         const comp = await fetchCompetitors({
           위치: params.위치,
           업종: params.업종,
           반경: params.반경,
-          lat: params.lat,
-          lng: params.lng,
+          lat: resolvedCenter.lat,
+          lng: resolvedCenter.lng,
         })
 
         applyCompetitors(normalizeCompetitors(comp))
 
         let populationDongCode = params.행정동코드 ?? null
-        if (!populationDongCode && comp.center) {
-          const geoResult = await reverseGeocode(comp.center.lat, comp.center.lng)
+        if (!populationDongCode) {
+          const geoResult = await reverseGeocode(resolvedCenter.lat, resolvedCenter.lng)
           if (geoResult?.dongCode) {
             populationDongCode = geoResult.dongCode
             setAnalysisContextRef.current({
@@ -81,8 +104,8 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
         // Step 2: density + population 병렬 조회
         const [density, pop] = await Promise.allSettled([
           fetchCompetitionPercentile({
-            lat: comp.center.lat,
-            lng: comp.center.lng,
+            lat: resolvedCenter.lat,
+            lng: resolvedCenter.lng,
             업종: params.업종,
             반경: params.반경,
           }),

@@ -30,7 +30,10 @@ export default function LeftPanel({
   }, [activeTab])
 
   return (
-    <div ref={scrollRef} className="relative flex h-full min-h-0 flex-col gap-2 overflow-y-auto p-[10px]">
+    <div
+      ref={scrollRef}
+      className="relative flex h-full min-h-0 flex-1 flex-col gap-2 overflow-y-auto p-[10px]"
+    >
       <div className="sticky top-0 z-20 -mx-[10px] shrink-0 border-b border-black/[0.08] bg-white/95 px-[10px] pb-1 pt-0.5 backdrop-blur-sm">
         <div className="grid grid-cols-2 rounded-xl border border-black/[0.08] bg-muted/40 p-0.5 shadow-[0_1px_0_rgba(0,0,0,0.02)]">
           <button

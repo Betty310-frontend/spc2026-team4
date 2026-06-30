@@ -148,7 +148,7 @@ export interface CompetitionSurfaceItem {
 // ── map 관련 ──────────────────────────────────
 
 export interface MapOptions {
-  center: CenterCoords
+  center?: CenterCoords
   radius_m: number
   competitors: CompetitorItem[]
 }

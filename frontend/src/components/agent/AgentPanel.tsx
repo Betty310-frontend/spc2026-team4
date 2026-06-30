@@ -35,6 +35,7 @@ export function AgentPanel({
   const reportAnnouncementIdRef = useRef<string | null>(null)
   const reportAnnouncementPendingRef = useRef<string | null>(null)
   const reportAnnouncedRef = useRef<string | null>(null)
+  const [hiddenIndustryPromptId, setHiddenIndustryPromptId] = useState<string | null>(null)
 
   const addAgentMessage = useCallback((msg: Omit<AgentMessage, 'id' | 'role'>) => {
     const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -67,6 +68,8 @@ export function AgentPanel({
   const prevLocationRef = useRef<string | null>(analysisContext.location)
   const prevCenterRef = useRef<{ lat: number; lng: number } | null>(analysisContext.center)
   const lastAnalysisSignatureRef = useRef<string | null>(null)
+  const analysisContextRef = useRef(analysisContext)
+  const analysisRunLockRef = useRef(false)
   const centerLat = analysisContext.center?.lat ?? null
   const centerLng = analysisContext.center?.lng ?? null
 
@@ -81,22 +84,44 @@ export function AgentPanel({
     return `${industry}|${radius}|location:${analysisContext.location ?? ''}`
   }, [analysisContext.industry, analysisContext.location, analysisContext.radius, centerLat, centerLng])
 
+  useEffect(() => {
+    analysisContextRef.current = analysisContext
+  }, [analysisContext])
+
   // 에이전트가 업종·위치 컨텍스트를 파싱하면 자동으로 데이터 조회 시작
   // 핀 이동으로 location이 바뀌거나, 같은 location 안에서 center가 바뀌면 재분석한다.
   useEffect(() => {
     const industry = analysisContext.industry
-    if (!isValidCategory(industry) || !analysisContext.location) return
+    const location = analysisContext.location
+    if (!isValidCategory(industry) || !location) return
+    if (analysisRunLockRef.current) return
     if (lastAnalysisSignatureRef.current === analysisSignature) return
 
+    analysisRunLockRef.current = true
     lastAnalysisSignatureRef.current = analysisSignature
-    runAnalysis({
-      위치: analysisContext.location,
-      업종: industry,
-      반경: analysisContext.radius ?? undefined,
-      lat: centerLat ?? undefined,
-      lng: centerLng ?? undefined,
-      행정동코드: analysisContext.dongCode ?? undefined,
-    })
+    void (async () => {
+      try {
+        await runAnalysis({
+          위치: location,
+          업종: industry,
+          반경: analysisContext.radius ?? undefined,
+          lat: centerLat ?? undefined,
+          lng: centerLng ?? undefined,
+          행정동코드: analysisContext.dongCode ?? undefined,
+        })
+      } finally {
+        analysisRunLockRef.current = false
+        const latest = analysisContextRef.current
+        const latestCenterLat = latest.center?.lat ?? null
+        const latestCenterLng = latest.center?.lng ?? null
+        const latestSignature =
+          latestCenterLat != null && latestCenterLng != null
+            ? `${latest.industry ?? ''}|${latest.radius ?? ''}|center:${latestCenterLat.toFixed(6)},${latestCenterLng.toFixed(6)}`
+            : `${latest.industry ?? ''}|${latest.radius ?? ''}|location:${latest.location ?? ''}`
+
+        lastAnalysisSignatureRef.current = latestSignature
+      }
+    })()
   }, [
     analysisSignature,
     analysisContext.industry,
@@ -193,10 +218,21 @@ export function AgentPanel({
   const handleQuickStart = (text: string) => {
     setShowQuickStart(false)
     setLocalMessages([])
+    setHiddenIndustryPromptId(null)
     startNewAnalysis()
     setInitMessage({ ...INITIAL_MESSAGE, isError: false })
     void append(text)
   }
+
+  const handleIndustryQuickSelect = useCallback(
+    (text: string, messageId: string) => {
+      setHiddenIndustryPromptId(messageId)
+      setShowQuickStart(false)
+      setLocalMessages([])
+      void append(text)
+    },
+    [append],
+  )
 
   const handleConfirmAction = useCallback(
     async (action: string) => {
@@ -242,6 +278,7 @@ export function AgentPanel({
           if (pos) {
             setAnalysisContext({
               userLocation: pos,
+              center: pos,
               location: null,
               dongCode: null,
               fullLocationName: null,
@@ -253,6 +290,7 @@ export function AgentPanel({
             if (geoResult) {
               setAnalysisContext({
                 userLocation: pos,
+                center: pos,
                 location: geoResult.dongName,
                 dongCode: geoResult.dongCode,
                 fullLocationName: geoResult.fullName,
@@ -275,6 +313,13 @@ export function AgentPanel({
 
         case 'input_manually':
           setInitMessage((prev) => ({ ...prev, confirmedAction: action }))
+          setAnalysisContext({
+            center: null,
+            userLocation: null,
+            location: null,
+            dongCode: null,
+            fullLocationName: null,
+          })
           setShowQuickStart(true)
           document.querySelector<HTMLInputElement>('[data-chat-input]')?.focus()
           break
@@ -321,6 +366,8 @@ export function AgentPanel({
         <MessageThread
           messages={allMessages}
           onConfirmAction={handleConfirmAction}
+          onIndustryQuickSelect={handleIndustryQuickSelect}
+          hiddenIndustryPromptId={hiddenIndustryPromptId}
           isStreaming={isLoading}
           disableConfirm={geoStatus === 'loading'}
         />
