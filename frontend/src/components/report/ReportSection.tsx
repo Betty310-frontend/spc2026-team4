@@ -279,16 +279,8 @@ function ReportSectionBody({
     lat: analysisContext.center?.lat ?? undefined,
     lng: analysisContext.center?.lng ?? undefined,
   })
-  const summarySectionRef = useRef<HTMLDivElement>(null)
-  const insightsSectionRef = useRef<HTMLDivElement>(null)
-  const plannerSectionRef = useRef<HTMLDivElement>(null)
-  const ageSectionRef = useRef<HTMLDivElement>(null)
-  const genderSectionRef = useRef<HTMLDivElement>(null)
-  const weekdayWeekendSectionRef = useRef<HTMLDivElement>(null)
-  const swotSectionRef = useRef<HTMLDivElement>(null)
-  const strategySectionRef = useRef<HTMLDivElement>(null)
-  const checklistSectionRef = useRef<HTMLDivElement>(null)
-  const sourcesSectionRef = useRef<HTMLDivElement>(null)
+ 
+  const reportContentRef = useRef<HTMLDivElement>(null)
 
   useEffect(() => {
     latestQueryKeyRef.current = queryKey
@@ -357,23 +349,12 @@ function ReportSectionBody({
     availableQuestions.length > 0 ? Math.round((checkedCount / availableQuestions.length) * 100) : 0
 
   const handleExportPdf = async () => {
-    if (!report || isExportingPdf) return
+    if (!report || isExportingPdf || !reportContentRef.current) return
 
     setIsExportingPdf(true)
     try {
       await generateReportPdf({
-        sections: [
-          { element: summarySectionRef.current, label: 'summary' },
-          { element: insightsSectionRef.current, label: 'insights' },
-          { element: plannerSectionRef.current, label: 'planner' },
-          { element: ageSectionRef.current, label: 'age' },
-          { element: genderSectionRef.current, label: 'gender' },
-          { element: weekdayWeekendSectionRef.current, label: 'weekday-weekend' },
-          { element: swotSectionRef.current, label: 'swot' },
-          { element: strategySectionRef.current, label: 'strategy' },
-          { element: checklistSectionRef.current, label: 'checklist' },
-          { element: sourcesSectionRef.current, label: 'sources' },
-        ],
+        element: reportContentRef.current,
         meta: report.meta,
       })
   } finally {
@@ -494,7 +475,7 @@ function ReportSectionBody({
         </Button>
       </div>
 
-      <div className="w-full space-y-6">
+      <div ref={reportContentRef} className="w-full space-y-6">
         {forbidden && (
           <Card className="border-[#FECACA] bg-[#FEF2F2] shadow-sm">
             <CardContent className="flex items-center gap-2 px-4 py-3 text-xs text-[#B91C1C]">
@@ -504,7 +485,7 @@ function ReportSectionBody({
           </Card>
         )}
 
-        <div ref={summarySectionRef} data-pdf-section="summary" className="w-full">
+        <div className="w-full">
         <Card className="w-full border-border/70 bg-white shadow-sm">
           <CardContent className="space-y-3 p-4">
             <div className="flex items-start justify-between gap-3">
@@ -557,7 +538,7 @@ function ReportSectionBody({
         </Card>
         </div>
 
-        <section ref={insightsSectionRef} data-pdf-section="insights" className="w-full space-y-2">
+        <section className="w-full space-y-2">
           <div>
             <p className="text-gray-700 text-xs font-semibold">인사이트</p>
             <p className="text-sm font-semibold text-gray-700">차트 전에 먼저 읽는 핵심 해석</p>
@@ -585,7 +566,7 @@ function ReportSectionBody({
           </ul>
         </section>
 
-        <div ref={plannerSectionRef} data-pdf-section="planner" className="w-full">
+        <div className="w-full">
         <Card className="w-full border-border/70 bg-white shadow-sm">
           <CardContent className="space-y-3 p-4">
             <div className="flex items-center justify-between">
@@ -659,7 +640,7 @@ function ReportSectionBody({
         </div>
 
         <div className="grid gap-3 md:grid-cols-2">
-          <div ref={ageSectionRef} data-pdf-section="age" className="w-full">
+          <div className="w-full">
           <Card className="border-border/70 bg-white shadow-sm">
             <CardContent className="space-y-3 p-4">
               <div>
@@ -695,7 +676,7 @@ function ReportSectionBody({
           </Card>
           </div>
 
-          <div ref={genderSectionRef} data-pdf-section="gender" className="w-full">
+          <div className="w-full">
           <Card className="border-border/70 bg-white shadow-sm">
             <CardContent className="space-y-3 p-4">
               <div>
@@ -745,7 +726,7 @@ function ReportSectionBody({
           </div>
         </div>
 
-        <div ref={weekdayWeekendSectionRef} data-pdf-section="weekday-weekend" className="w-full">
+        <div className="w-full">
         <Card className="border-border/70 bg-white shadow-sm">
           <CardContent className="space-y-3 p-4">
             <div>
@@ -783,7 +764,7 @@ function ReportSectionBody({
         </Card>
         </div>
 
-        <div ref={swotSectionRef} data-pdf-section="swot" className="w-full">
+        <div className="w-full">
         <Card className="border-border/70 bg-white shadow-sm">
           <CardContent className="space-y-3 p-4">
             <div>
@@ -820,7 +801,7 @@ function ReportSectionBody({
         </div>
 
         <div className="w-full space-y-6">
-          <section ref={strategySectionRef} data-pdf-section="strategy" className="w-full space-y-2">
+          <section className="w-full space-y-2">
             <div>
               <p className="text-muted-foreground text-xs font-semibold">전략 제안</p>
               <p className="text-foreground text-sm">실행 우선순위</p>
@@ -836,7 +817,7 @@ function ReportSectionBody({
             </div>
           </section>
 
-          <section ref={checklistSectionRef} data-pdf-section="checklist" className="w-full space-y-2">
+          <section className="w-full space-y-2">
             <div className="flex w-full items-center justify-between">
               <div>
                 <p className="text-muted-foreground text-xs font-semibold">체크리스트</p>
@@ -867,7 +848,7 @@ function ReportSectionBody({
           </section>
         </div>
 
-        <div ref={sourcesSectionRef} data-pdf-section="sources" className="w-full">
+        <div className="w-full">
         <Card size="sm" className="w-full border-border/70 bg-white shadow-sm">
           <CardContent className="space-y-2.5 p-3">
             <div>

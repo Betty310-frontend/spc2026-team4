@@ -46,7 +46,7 @@ function getHexagonPath(h3Index: string): kakao.maps.LatLng[] {
   if (cached) return cached
 
   const boundary = cellToBoundary(h3Index, true)
-  const path = boundary.map(([lng, lat]) => new window.kakao.maps.LatLng(lat, lng))
+  const path = boundary.map(([lng, lat]: [number, number]) => new window.kakao.maps.LatLng(lat, lng))
 
   if (path.length > 1) {
     const first = path[0]

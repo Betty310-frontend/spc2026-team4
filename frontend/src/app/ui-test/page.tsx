@@ -23,7 +23,74 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
-import { AlertCircle, CheckCircle, Info, Terminal } from 'lucide-react';
+import { AlertCircle, CheckCircle, Download, Info, Terminal } from 'lucide-react';
+
+function PdfTestButton() {
+  const [loading, setLoading] = useState(false)
+
+  const handleDownload = async () => {
+    if (loading) return
+    setLoading(true)
+    try {
+      const { jsPDF } = await import('jspdf')
+
+      const pdf = new jsPDF('p', 'pt', 'a4')
+      const W = pdf.internal.pageSize.getWidth()
+      const m = 40
+
+      // 제목
+      pdf.setFontSize(20)
+      pdf.setFont('helvetica', 'bold')
+      pdf.setTextColor(17, 24, 39)
+      pdf.text('SPC Team — PDF Test', m, m + 24)
+
+      // 부제
+      pdf.setFontSize(11)
+      pdf.setFont('helvetica', 'normal')
+      pdf.setTextColor(107, 114, 128)
+      const now = new Date()
+      const dateStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')} ${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}:${String(now.getSeconds()).padStart(2, '0')}`
+      pdf.text('A4 PDF download test · ' + dateStr, m, m + 46)
+
+      // 구분선
+      pdf.setDrawColor(229, 231, 235)
+      pdf.line(m, m + 58, W - m, m + 58)
+
+      // 카드 3개
+      const cards = [
+        { label: 'Competition', value: 'Medium', r: 239, g: 246, b: 255 },
+        { label: 'Lunch Peak', value: '12~13h', r: 255, g: 251, b: 235 },
+        { label: 'Core Customer', value: '30s', r: 236, g: 253, b: 245 },
+      ]
+      const cardW = (W - m * 2 - 12) / 3
+      cards.forEach((card, i) => {
+        const x = m + i * (cardW + 6)
+        const y = m + 72
+        pdf.setFillColor(card.r, card.g, card.b)
+        pdf.roundedRect(x, y, cardW, 52, 6, 6, 'F')
+        pdf.setFontSize(9)
+        pdf.setTextColor(107, 114, 128)
+        pdf.text(card.label, x + 10, y + 18)
+        pdf.setFontSize(14)
+        pdf.setFont('helvetica', 'bold')
+        pdf.setTextColor(17, 24, 39)
+        pdf.text(card.value, x + 10, y + 38)
+        pdf.setFont('helvetica', 'normal')
+      })
+
+      pdf.save('pdf-test.pdf')
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  return (
+    <Button onClick={handleDownload} disabled={loading}>
+      <Download className="mr-2 h-4 w-4" />
+      {loading ? 'PDF 생성 중...' : 'PDF 다운로드 테스트해봐'}
+    </Button>
+  )
+}
 
 function SectionTitle({ children }: { children: React.ReactNode }) {
   return (
@@ -383,6 +450,12 @@ export default function UITestPage() {
               </ScrollArea>
             </div>
           </div>
+        </section>
+
+        {/* ─── PDF ─── */}
+        <section>
+          <SectionTitle>PDF</SectionTitle>
+          <PdfTestButton />
         </section>
 
         {/* ─── Overlays ─── */}
