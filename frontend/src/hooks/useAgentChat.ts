@@ -91,7 +91,7 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
     return typeof value === 'object' && value !== null
   }
 
-  const { messages, sendMessage, status, stop } = useChat({
+  const { messages, sendMessage, status, stop, setMessages } = useChat({
     transport,
 
     onData(dataPart) {
@@ -456,6 +456,7 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
     input,
     setInput,
     append,
+    setMessages,
     isLoading,
     agentStatus: isLoading ? ('analyzing' as const) : ('idle' as const),
     stop,

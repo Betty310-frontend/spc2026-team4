@@ -4,6 +4,7 @@ import { AgentMessage, UserMessage } from '@/types/message'
 import { AgentMarkdown } from './AgentMarkdown'
 import { IndustryQuickButtons } from './IndustryQuickButtons'
 import { ExplorationQuickButtons } from './ExplorationQuickButtons'
+import { QuickReplyButtons, type QuickReplyType } from './QuickReplyButtons'
 import { ChevronRight } from 'lucide-react'
 
 interface MessageBubbleProps {
@@ -19,6 +20,11 @@ interface MessageBubbleProps {
     type: NonNullable<AgentMessage['messageType']>,
     value: string | number,
   ) => void
+  onQuickReplySelect?: (
+    messageId: string,
+    type: QuickReplyType,
+    option: { label: string; text: string; action?: 'generate_report' | 'dismiss' },
+  ) => void
   hiddenIndustryPromptId?: string | null
 }
 
@@ -31,6 +37,56 @@ function isIndustryQuestion(content: string) {
   )
 }
 
+function normalizePromptText(content: string) {
+  return content.replace(/\s+/g, '').replace(/[?？,，.。!！:：]/g, '')
+}
+
+function detectQuickReplyType(content: string): QuickReplyType | null {
+  const normalized = normalizePromptText(content)
+
+  if (
+    /직접운영(예정)?(인가요|할예정인가요|하실예정인가요)?/.test(normalized) ||
+    /직접운영예정/.test(normalized) ||
+    /직원(을)?(고용|채용)(계획|예정|도생각|도고려)/.test(normalized) ||
+    /직원고용계획/.test(normalized) ||
+    /직원고용도생각/.test(normalized) ||
+    /고용계획(이|은)?있나요/.test(normalized) ||
+    /운영방식(은|이)?/.test(normalized)
+  ) {
+    return 'operation'
+  }
+
+  if (
+    /손익분기점달성목표기간/.test(normalized) ||
+    /손익분기점/.test(normalized) ||
+    /손익분기/.test(normalized) ||
+    /몇개월/.test(normalized) ||
+    /목표기간/.test(normalized)
+  ) {
+    return 'breakeven'
+  }
+
+  if (/차별화/.test(normalized) || /차별점/.test(normalized)) {
+    return 'differentiation'
+  }
+
+  if (
+    /반경/.test(normalized) &&
+    /(바꿔|조정|늘려|줄여|유지|넓혀|좁혀)/.test(normalized)
+  ) {
+    return 'radius'
+  }
+
+  if (
+    /리포트/.test(normalized) &&
+    /(생성|받아|만들|원하시)/.test(normalized)
+  ) {
+    return 'report_offer'
+  }
+
+  return null
+}
+
 export function MessageBubble({
   message,
   isStreaming,
@@ -40,6 +96,7 @@ export function MessageBubble({
   onConfirmAction,
   onIndustryQuickSelect,
   onExplorationQuickSelect,
+  onQuickReplySelect,
   hiddenIndustryPromptId,
 }: MessageBubbleProps) {
   if (message.role === 'user') {
@@ -60,11 +117,24 @@ export function MessageBubble({
     !message.confirmedAction &&
     hiddenIndustryPromptId !== message.id &&
     isIndustryQuestion(message.content)
+  const quickReplyType =
+    !isError && !message.confirmedAction && !isStreaming
+      ? message.messageType === 'report_offer'
+        ? 'report_offer'
+        : detectQuickReplyType(message.content)
+      : null
   const showExplorationButtons =
     !isError &&
     !message.confirmedAction &&
     message.messageType != null &&
+    message.messageType !== 'report_offer' &&
     onExplorationQuickSelect != null &&
+    !isStreaming &&
+    quickReplyType == null &&
+    (disabledQuickActionIds?.has(message.id) !== true)
+  const showQuickReplies =
+    quickReplyType != null &&
+    onQuickReplySelect != null &&
     (disabledQuickActionIds?.has(message.id) !== true)
 
   return (
@@ -109,6 +179,17 @@ export function MessageBubble({
             onSelect={(value) =>
               onExplorationQuickSelect(message.id, message.messageType!, value)
             }
+          />
+        </div>
+      )}
+
+      {showQuickReplies && quickReplyType && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          <span className="text-muted-foreground text-[10px]">빠른 답변</span>
+          <QuickReplyButtons
+            type={quickReplyType}
+            disabled={buttonsDisabled}
+            onSelect={(option) => onQuickReplySelect(message.id, quickReplyType, option)}
           />
         </div>
       )}

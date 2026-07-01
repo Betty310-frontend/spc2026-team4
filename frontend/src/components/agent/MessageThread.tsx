@@ -14,6 +14,11 @@ interface MessageThreadProps {
     type: ExplorationMessageType,
     value: string | number,
   ) => void
+  onQuickReplySelect?: (
+    messageId: string,
+    type: 'operation' | 'breakeven' | 'differentiation' | 'radius' | 'report_offer',
+    option: { label: string; text: string; action?: 'generate_report' | 'dismiss' },
+  ) => void
   disabledQuickActionIds?: Set<string>
   hiddenIndustryPromptId?: string | null
   isStreaming?: boolean
@@ -25,6 +30,7 @@ export function MessageThread({
   onConfirmAction,
   onIndustryQuickSelect,
   onExplorationQuickSelect,
+  onQuickReplySelect,
   disabledQuickActionIds,
   hiddenIndustryPromptId,
   isStreaming,
@@ -55,6 +61,7 @@ export function MessageThread({
             onConfirmAction={onConfirmAction}
             onIndustryQuickSelect={onIndustryQuickSelect}
             onExplorationQuickSelect={onExplorationQuickSelect}
+            onQuickReplySelect={onQuickReplySelect}
             disabledQuickActionIds={disabledQuickActionIds}
             hiddenIndustryPromptId={hiddenIndustryPromptId}
           />

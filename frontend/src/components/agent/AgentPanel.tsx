@@ -1,6 +1,7 @@
 'use client'
 
-import { useState, useCallback, useMemo, useEffect, useRef } from 'react'
+import { useState, useCallback, useMemo, useEffect, useLayoutEffect, useRef } from 'react'
+import type { UIMessage } from 'ai'
 import { useAgentChat } from '@/hooks/useAgentChat'
 import { useGeolocation } from '@/hooks/use-geolocation'
 import { useAnalysis } from '@/hooks/use-analysis'
@@ -11,7 +12,12 @@ import { MessageThread } from './MessageThread'
 import { QuickStartButtons } from './QuickStartButtons'
 import { ChatInput } from './ChatInput'
 import { Disclaimer } from './Disclaimer'
-import type { AgentMessage, ExplorationMessageType } from '@/types/message'
+import type { QuickReplyType } from './QuickReplyButtons'
+import type {
+  AgentMessage,
+  ChatMessage,
+  ExplorationMessageType,
+} from '@/types/message'
 import { INITIAL_MESSAGE } from '@/constants/messages'
 import {
   beginMapUpdate,
@@ -113,6 +119,8 @@ export function AgentPanel({
   const [disabledQuickActionIds, setDisabledQuickActionIds] = useState<Set<string>>(
     () => new Set(),
   )
+  const [messageOrderById, setMessageOrderById] = useState<Record<string, number>>({ init: 0 })
+  const nextMessageOrderRef = useRef(1)
   const chatInputRef = useRef<HTMLInputElement>(null)
   const prevChatLoadingRef = useRef(false)
   const prevRadiusRef = useRef<number | null>(analysisContext.radius)
@@ -122,6 +130,16 @@ export function AgentPanel({
   const lastAnalysisSignatureRef = useRef<string | null>(null)
   const analysisRunInFlightRef = useRef(false)
   const confirmedPositionRef = useRef<ConfirmedPosition | null>(analysisContext.confirmedPosition)
+
+  const assignMessageOrder = useCallback((id: string) => {
+    setMessageOrderById((prev) => {
+      if (prev[id] != null) return prev
+
+      const next = nextMessageOrderRef.current
+      nextMessageOrderRef.current += 1
+      return { ...prev, [id]: next }
+    })
+  }, [])
 
   const addAgentMessage = useCallback((msg: Omit<AgentMessage, 'id' | 'role'>) => {
     const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -203,7 +221,16 @@ export function AgentPanel({
     [addAgentMessage],
   )
 
-  const { chatMessages, input, setInput, append, isLoading, agentStatus, startNewAnalysis } =
+  const {
+    chatMessages,
+    input,
+    setInput,
+    append,
+    setMessages,
+    isLoading,
+    agentStatus,
+    startNewAnalysis,
+  } =
     useAgentChat({
       onChatError: handleChatError,
       onCategoryMissing: promptIndustrySelection,
@@ -227,6 +254,35 @@ export function AgentPanel({
         }
       },
     })
+
+  const appendBootstrapConversation = useCallback(
+    (locationLabel: string) => {
+      const userMessage: UIMessage = {
+        id: `bootstrap-user-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role: 'user',
+        parts: [
+          {
+            type: 'text',
+            text: `현재 위치(${locationLabel})에서 창업을 준비 중이에요.`,
+          },
+        ],
+      }
+
+      const assistantMessage: UIMessage = {
+        id: `bootstrap-assistant-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role: 'assistant',
+        parts: [
+          {
+            type: 'text',
+            text: '어떤 업종을 생각하고 계신가요?',
+          },
+        ],
+      }
+
+      setMessages((prev) => [...prev, userMessage, assistantMessage])
+    },
+    [setMessages],
+  )
 
   const decoratedChatMessages = useMemo(
     () =>
@@ -427,7 +483,6 @@ export function AgentPanel({
       setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
       explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
       beginMapUpdate('radius-change')
-      maybeOfferReport('radius')
     }
 
     prevLocationRef.current = nextLocation
@@ -479,6 +534,13 @@ export function AgentPanel({
     isError: false,
   }))
   const [showQuickStart, setShowQuickStart] = useState(false)
+
+  useLayoutEffect(() => {
+    const combined = [initMessage, ...decoratedChatMessages, ...localMessages]
+    for (const message of combined) {
+      assignMessageOrder(message.id)
+    }
+  }, [assignMessageOrder, decoratedChatMessages, initMessage, localMessages])
 
   const handleSend = () => {
     const trimmed = input.trim()
@@ -533,11 +595,8 @@ export function AgentPanel({
         return
       }
 
-      setExplorationState((prev) => ({ ...prev, userResponded: true }))
-      explorationStateRef.current = { ...explorationStateRef.current, userResponded: true }
       setHiddenIndustryPromptId(messageId)
       setShowQuickStart(false)
-      setLocalMessages([])
       void append(
         text,
         {
@@ -549,6 +608,37 @@ export function AgentPanel({
       )
     },
     [append],
+  )
+
+  const handleQuickReplySelect = useCallback(
+    (
+      messageId: string,
+      type: QuickReplyType,
+      option: { label: string; text: string; action?: 'generate_report' | 'dismiss' },
+    ) => {
+      disableQuickActionMessage(messageId)
+      setShowQuickStart(false)
+
+      setExplorationState((prev) => ({ ...prev, userResponded: true }))
+      explorationStateRef.current = { ...explorationStateRef.current, userResponded: true }
+
+      if (option.action === 'generate_report') {
+        void handleGenerateReport('report')
+        return
+      }
+
+      if (option.action === 'dismiss') {
+        return
+      }
+
+      if (type === 'radius' || (type === 'report_offer' && option.text.includes('반경'))) {
+        setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
+        explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
+      }
+
+      void append(option.text, undefined, { kind: 'reply' })
+    },
+    [append, disableQuickActionMessage, handleGenerateReport],
   )
 
   const handleExplorationQuickSelect = useCallback(
@@ -604,7 +694,6 @@ export function AgentPanel({
           setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
           explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
           void append('반경을 바꿔볼게요.', undefined, { kind: 'reply' })
-          maybeOfferReport('radius')
           return
         }
 
@@ -625,7 +714,6 @@ export function AgentPanel({
           setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
           explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
           void append('반경을 더 바꿔볼게요.', undefined, { kind: 'reply' })
-          maybeOfferReport('radius')
           return
         }
 
@@ -712,15 +800,7 @@ export function AgentPanel({
                 location: confirmed.dongName,
                 dongCode: confirmed.dongCode,
               })
-              void append(
-                `현재 위치(${confirmed.dongName})에서 창업을 준비 중이에요.`,
-                {
-                  location: confirmed.dongName,
-                  confirmedPosition: confirmed,
-                  dongCode: confirmed.dongCode,
-                },
-                { kind: 'explore' },
-              )
+              appendBootstrapConversation(confirmed.dongName)
             } else {
               // 역지오코딩 실패 → 좌표 텍스트 fallback
               const fallbackPosition: ConfirmedPosition = {
@@ -736,16 +816,7 @@ export function AgentPanel({
                 location: fallbackPosition.dongName,
                 dongCode: fallbackPosition.dongCode,
               })
-              void append(
-                `현재 위치(좌표: ${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)})에서 창업을 준비 중이에요.`,
-                {
-                  userLocation: pos,
-                  confirmedPosition: fallbackPosition,
-                  location: fallbackPosition.dongName,
-                  dongCode: fallbackPosition.dongCode,
-                },
-                { kind: 'explore' },
-              )
+              appendBootstrapConversation(`좌표: ${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`)
             }
           } else {
             void append('위치 권한을 허용하지 않았어요.')
@@ -795,7 +866,10 @@ export function AgentPanel({
       append,
       requestLocation,
       confirmPosition,
+      setInitMessage,
+      setShowQuickStart,
       setAnalysisContext,
+      setLocalMessages,
       onOpenReportTab,
       onReportAnnouncementVisibleChange,
       handleGenerateReport,
@@ -803,13 +877,21 @@ export function AgentPanel({
       handleRegenerateReport,
       dismissLocationChangeNotice,
       resetExplorationState,
+      appendBootstrapConversation,
     ],
   )
 
   // SDK 메시지 + 로컬 에러 메시지 병합
   const allMessages = useMemo(
-    () => [initMessage, ...decoratedChatMessages, ...localMessages],
-    [decoratedChatMessages, initMessage, localMessages],
+    () => {
+      const combined = [initMessage, ...decoratedChatMessages, ...localMessages]
+      return combined.sort((a, b) => {
+        const orderA = messageOrderById[a.id] ?? 0
+        const orderB = messageOrderById[b.id] ?? 0
+        return orderA - orderB
+      }) as ChatMessage[]
+    },
+    [decoratedChatMessages, initMessage, localMessages, messageOrderById],
   )
 
   return (
@@ -821,6 +903,7 @@ export function AgentPanel({
           onConfirmAction={handleConfirmAction}
           onIndustryQuickSelect={handleIndustryQuickSelect}
           onExplorationQuickSelect={handleExplorationQuickSelect}
+          onQuickReplySelect={handleQuickReplySelect}
           disabledQuickActionIds={disabledQuickActionIds}
           hiddenIndustryPromptId={hiddenIndustryPromptId}
           isStreaming={isLoading}
