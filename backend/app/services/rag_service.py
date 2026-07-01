@@ -7,7 +7,7 @@ from dotenv import load_dotenv
 from openai import OpenAI
 
 BASE_DIR = Path(__file__).resolve().parents[2]
-CHROMA_DIR = BASE_DIR / 'data' / 'chroma'
+CHROMA_DIR = BASE_DIR / "chroma"
 COLLECTION_NAME = 'business_rag'
 
 _openai_client: OpenAI | None = None
