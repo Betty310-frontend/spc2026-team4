@@ -1,10 +1,11 @@
 'use client'
 
+import type { MouseEvent as ReactMouseEvent } from 'react'
 import { useState } from 'react'
 import { INDIGO, BORDER_SUBTLE } from '@/styles/colors'
 
 interface ResizeHandleProps {
-  onMouseDown: () => void
+  onMouseDown: (event: ReactMouseEvent<HTMLDivElement>) => void
 }
 
 export default function ResizeHandle({ onMouseDown }: ResizeHandleProps) {

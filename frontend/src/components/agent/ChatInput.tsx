@@ -1,6 +1,6 @@
 'use client'
 
-import { KeyboardEvent } from 'react'
+import { forwardRef, KeyboardEvent } from 'react'
 import { ArrowUp } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import { Input } from '@/components/ui/input'
@@ -14,7 +14,8 @@ interface ChatInputProps {
   placeholder?: string
 }
 
-export function ChatInput({ value, onChange, onSend, disabled, placeholder }: ChatInputProps) {
+export const ChatInput = forwardRef<HTMLInputElement, ChatInputProps>(
+  function ChatInput({ value, onChange, onSend, disabled, placeholder }, ref) {
   const handleKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
@@ -25,6 +26,7 @@ export function ChatInput({ value, onChange, onSend, disabled, placeholder }: Ch
   return (
     <div className="flex flex-shrink-0 items-center gap-2 border-t px-3 pt-3 pb-3">
       <Input
+        ref={ref}
         data-chat-input
         value={value}
         onChange={(e) => onChange(e.target.value)}
@@ -48,4 +50,7 @@ export function ChatInput({ value, onChange, onSend, disabled, placeholder }: Ch
       </Button>
     </div>
   )
-}
+  },
+)
+
+ChatInput.displayName = 'ChatInput'

@@ -38,6 +38,8 @@ export function AgentPanel({
   const locationChangeNoticeIdRef = useRef<string | null>(null)
   const locationChangeNoticeLocationRef = useRef<string | null>(null)
   const [hiddenIndustryPromptId, setHiddenIndustryPromptId] = useState<string | null>(null)
+  const chatInputRef = useRef<HTMLInputElement>(null)
+  const prevChatLoadingRef = useRef(false)
 
   const addAgentMessage = useCallback((msg: Omit<AgentMessage, 'id' | 'role'>) => {
     const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -104,6 +106,18 @@ export function AgentPanel({
 
   const { chatMessages, input, setInput, append, isLoading, agentStatus, startNewAnalysis } =
     useAgentChat({ onChatError: handleChatError })
+
+  useEffect(() => {
+    const wasLoading = prevChatLoadingRef.current
+    prevChatLoadingRef.current = isLoading
+
+    if (wasLoading && !isLoading) {
+      const isMobile = /iPhone|iPad|Android/i.test(navigator.userAgent)
+      if (!isMobile) {
+        chatInputRef.current?.focus()
+      }
+    }
+  }, [isLoading])
 
   const { runAnalysis, isLoading: analysisLoading, retry } = useAnalysis({
     onAgentMessage: addAgentMessage,
@@ -446,6 +460,7 @@ export function AgentPanel({
         )}
       </div>
       <ChatInput
+        ref={chatInputRef}
         value={input}
         onChange={setInput}
         onSend={handleSend}

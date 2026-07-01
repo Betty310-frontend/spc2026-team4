@@ -1,6 +1,7 @@
 'use client'
 
-import { ReactNode, useRef, useState, useCallback, useEffect } from 'react'
+import type { MouseEvent as ReactMouseEvent, ReactNode } from 'react'
+import { useRef, useState, useCallback, useEffect } from 'react'
 import Topbar from './Topbar'
 import ResizeHandle from './ResizeHandle'
 import { SURFACE_MUTED, TEXT_MUTED } from '@/styles/colors'
@@ -11,52 +12,66 @@ interface SplitLayoutProps {
   showDisclaimer?: boolean
 }
 
-const RIGHT_PANEL_MIN = 200
-const LEFT_PANEL_MIN = 360
+const MIN_RIGHT_PANEL_WIDTH = 240
+const MAX_RIGHT_PANEL_WIDTH = 480
 
 export default function SplitLayout({ left, right, showDisclaimer = false }: SplitLayoutProps) {
   const containerRef = useRef<HTMLDivElement>(null)
-  const [leftWidth, setLeftWidth] = useState<number | null>(null)
+  const [rightPanelWidth, setRightPanelWidth] = useState(280)
   const isDragging = useRef(false)
 
-  // 초기 너비: 컨테이너 너비 - 280px (우측 패널 기본값)
-  useEffect(() => {
-    if (!containerRef.current) return
+  const clampRightPanelWidth = useCallback((nextWidth: number) => {
+    if (!containerRef.current) return nextWidth
+
     const totalWidth = containerRef.current.offsetWidth
-    setLeftWidth(totalWidth - 280)
+    const maxRight = Math.min(MAX_RIGHT_PANEL_WIDTH, Math.max(MIN_RIGHT_PANEL_WIDTH, totalWidth - 360))
+    return Math.min(maxRight, Math.max(MIN_RIGHT_PANEL_WIDTH, nextWidth))
   }, [])
 
-  const handleMouseDown = useCallback(() => {
+  useEffect(() => {
+    const updateWidth = () => {
+      setRightPanelWidth((currentWidth) => clampRightPanelWidth(currentWidth))
+    }
+
+    updateWidth()
+    window.addEventListener('resize', updateWidth)
+    return () => {
+      window.removeEventListener('resize', updateWidth)
+    }
+  }, [clampRightPanelWidth])
+
+  const handleMouseDown = useCallback((e: ReactMouseEvent<HTMLDivElement>) => {
+    e.preventDefault()
     isDragging.current = true
     document.body.style.cursor = 'col-resize'
     document.body.style.userSelect = 'none'
-  }, [])
+    const startX = e.clientX
+    const startWidth = rightPanelWidth
 
-  const handleMouseMove = useCallback((e: MouseEvent) => {
-    if (!isDragging.current || !containerRef.current) return
-    const containerLeft = containerRef.current.getBoundingClientRect().left
-    const totalWidth = containerRef.current.offsetWidth
-    const newLeftWidth = e.clientX - containerLeft
+    const onMouseMove = (moveEvent: MouseEvent) => {
+      const delta = startX - moveEvent.clientX
+      const newWidth = clampRightPanelWidth(startWidth + delta)
+      setRightPanelWidth(newWidth)
+    }
 
-    const maxLeft = totalWidth - RIGHT_PANEL_MIN
-    const clamped = Math.max(LEFT_PANEL_MIN, Math.min(newLeftWidth, maxLeft))
-    setLeftWidth(clamped)
-  }, [])
+    const onMouseUp = () => {
+      isDragging.current = false
+      document.removeEventListener('mousemove', onMouseMove)
+      document.removeEventListener('mouseup', onMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
+    }
 
-  const handleMouseUp = useCallback(() => {
-    isDragging.current = false
-    document.body.style.cursor = ''
-    document.body.style.userSelect = ''
-  }, [])
+    document.addEventListener('mousemove', onMouseMove)
+    document.addEventListener('mouseup', onMouseUp)
+  }, [clampRightPanelWidth, rightPanelWidth])
 
   useEffect(() => {
-    window.addEventListener('mousemove', handleMouseMove)
-    window.addEventListener('mouseup', handleMouseUp)
     return () => {
-      window.removeEventListener('mousemove', handleMouseMove)
-      window.removeEventListener('mouseup', handleMouseUp)
+      document.body.style.cursor = ''
+      document.body.style.userSelect = ''
     }
-  }, [handleMouseMove, handleMouseUp])
+  }, [])
 
   return (
     <div className="flex h-full min-h-screen flex-col overflow-hidden bg-white">
@@ -65,16 +80,9 @@ export default function SplitLayout({ left, right, showDisclaimer = false }: Spl
       <div
         ref={containerRef}
         className="flex h-full min-h-0 flex-1 flex-col-reverse overflow-hidden md:flex-row"
-        style={{ visibility: leftWidth == null ? 'hidden' : 'visible' }}
       >
         {/* 좌측 패널 */}
-        <div
-          className="flex min-h-0 flex-1 flex-col overflow-hidden md:min-w-0"
-          style={{
-            width: leftWidth != null ? `${leftWidth}px` : undefined,
-            flex: leftWidth == null ? '1 1 0%' : undefined,
-          }}
-        >
+        <div className="flex min-h-0 flex-1 min-w-0 flex-col overflow-hidden">
           {left}
         </div>
 
@@ -85,7 +93,8 @@ export default function SplitLayout({ left, right, showDisclaimer = false }: Spl
 
         {/* 우측 에이전트 패널 */}
         <div
-          className="flex h-full min-h-0 w-[280px] flex-shrink-0 flex-col overflow-hidden md:min-h-0"
+          className="flex h-full min-h-0 flex-shrink-0 flex-col overflow-hidden md:min-h-0"
+          style={{ width: rightPanelWidth }}
         >
           {right}
         </div>
