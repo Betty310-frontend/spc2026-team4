@@ -406,9 +406,6 @@ export function KakaoMap({
 
     committedCenterRef.current = currentCenter
     syncOverlays(currentCenter)
-    if (previewCenter != null) {
-      setPreviewCenter(null)
-    }
   }, [
     currentCenter.lat,
     currentCenter.lng,
@@ -416,7 +413,6 @@ export function KakaoMap({
     pendingCenter,
     syncOverlays,
     currentCenter,
-    previewCenter,
   ])
 
   useEffect(() => {
@@ -458,12 +454,12 @@ export function KakaoMap({
 
       if (!mapInstance || !window.kakao?.maps) return
 
-      const center = previewCenter ?? currentCenter
+      const center = dragging || pendingCenter ? previewCenter ?? currentCenter : currentCenter
       const centerLatLng = new window.kakao.maps.LatLng(center.lat, center.lng)
       mapInstance.panTo(centerLatLng)
       mapInstance.setLevel(zoomLevel, { animate: true })
     },
-    [currentCenter, mapInstance, previewCenter, setAnalysisContext],
+    [currentCenter, dragging, mapInstance, pendingCenter, previewCenter, setAnalysisContext],
   )
 
   const handleDrag = useCallback((marker: kakao.maps.Marker) => {
@@ -583,7 +579,7 @@ export function KakaoMap({
     rollbackToCenter(dragOriginRef.current)
   }, [rollbackToCenter])
 
-  const visibleCenter = pendingCenter ?? previewCenter ?? currentCenter
+  const visibleCenter = pendingCenter ?? (dragging ? previewCenter ?? currentCenter : currentCenter)
   const markerCenter = pendingCenter ?? currentCenter
 
   // <Map>을 조건부로 마운트/언마운트하면 sdkLoading 전환 시점에 Kakao SDK 내부
