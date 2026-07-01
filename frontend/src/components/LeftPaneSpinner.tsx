@@ -3,12 +3,17 @@
 import { useEffect, useRef, useState } from 'react'
 import { Loader2 } from 'lucide-react'
 import { useAnalysisResult } from '@/store/analysisResult'
+import mapLoadingStateModule from '@/lib/mapLoadingState'
+
+const { hasMapLoading } = mapLoadingStateModule as {
+  hasMapLoading: (loadingKeys: Set<string>) => boolean
+}
 
 const SHOW_DELAY_MS = 150
 const MIN_VISIBLE_MS = 300
 
 export function LeftPaneSpinner() {
-  const { mapSync, isLoading } = useAnalysisResult()
+  const { mapSync, loadingKeys } = useAnalysisResult()
   const [visible, setVisible] = useState(false)
   const showTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const hideTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
@@ -28,7 +33,7 @@ export function LeftPaneSpinner() {
 
     clearTimers()
 
-    const active = mapSync.pending || isLoading
+    const active = mapSync.pending || hasMapLoading(loadingKeys)
     const immediate = mapSync.reason === 'pin-move'
 
     if (active) {
@@ -64,7 +69,7 @@ export function LeftPaneSpinner() {
     }, remaining)
 
     return clearTimers
-  }, [mapSync.pending, mapSync.reason, isLoading, visible])
+  }, [loadingKeys, mapSync.pending, mapSync.reason, visible])
 
   if (!visible) return null
 

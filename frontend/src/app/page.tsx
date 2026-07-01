@@ -8,13 +8,19 @@ import { AgentPanel } from '@/components/agent/AgentPanel'
 import { useAnalysisResult } from '@/store/analysisResult'
 import { useAnalysisContext } from '@/store/analysisContext'
 import { KakaoMap } from '@/components/map/KakaoMap'
+import mapLoadingStateModule from '@/lib/mapLoadingState'
+
+const { hasMapLoading } = mapLoadingStateModule as {
+  hasMapLoading: (loadingKeys: Set<string>) => boolean
+}
 
 export default function Home() {
   // mapOptions는 useAnalysis → setMapOptions → 스토어에서 공유
-  const { mapOptions, h3Hexagons, isLoading } = useAnalysisResult()
+  const { mapOptions, h3Hexagons, loadingKeys } = useAnalysisResult()
   const { analysisContext } = useAnalysisContext()
   const [activeTab, setActiveTab] = useState<'map' | 'report'>('map')
   const [reportBadgeVisible, setReportBadgeVisible] = useState(false)
+  const isMapLoading = hasMapLoading(loadingKeys)
 
   return (
     <SplitLayout
@@ -30,7 +36,7 @@ export default function Home() {
                   options={mapOptions}
                   h3Hexagons={h3Hexagons}
                   userLocation={analysisContext.userLocation}
-                  isLoading={isLoading}
+                  isLoading={isMapLoading}
                   isActive={isActive}
                 />
               </div>
