@@ -34,12 +34,14 @@ const EXPLORATION_QUICK_BUTTONS: Record<
 interface ExplorationQuickButtonsProps {
   type: ExplorationMessageType
   disabled?: boolean
+  selectedValue?: number | string | null
   onSelect: (value: ExplorationButtonValue) => void
 }
 
 export function ExplorationQuickButtons({
   type,
   disabled = false,
+  selectedValue = null,
   onSelect,
 }: ExplorationQuickButtonsProps) {
   return (
@@ -48,7 +50,7 @@ export function ExplorationQuickButtons({
         <Button
           key={btn.value}
           type="button"
-          variant="outline"
+          variant={btn.value === selectedValue ? 'default' : 'outline'}
           className="h-auto w-fit justify-start px-2 py-2 text-xs font-medium"
           disabled={disabled}
           onClick={() => onSelect(btn.value)}

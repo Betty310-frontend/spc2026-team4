@@ -23,6 +23,7 @@ interface MessageThreadProps {
   disabledQuickActionIds?: Set<string>
   usedQuickReplyTypes?: Set<QuickReplyType>
   hiddenIndustryPromptId?: string | null
+  selectedRadius?: number | null
   isStreaming?: boolean
   disableConfirm?: boolean
 }
@@ -36,6 +37,7 @@ export function MessageThread({
   disabledQuickActionIds,
   usedQuickReplyTypes,
   hiddenIndustryPromptId,
+  selectedRadius,
   isStreaming,
   disableConfirm,
 }: MessageThreadProps) {
@@ -75,6 +77,7 @@ export function MessageThread({
             usedQuickReplyTypes={usedQuickReplyTypes}
             isLastAssistantMessage={msg.id === lastAssistantMessageId}
             hiddenIndustryPromptId={hiddenIndustryPromptId}
+            selectedRadius={selectedRadius}
           />
         )
       })}

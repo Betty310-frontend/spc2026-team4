@@ -26,16 +26,30 @@ import {
 import { isValidCategory } from '@/lib/category'
 import type { ConfirmedPosition } from '@/types/analysis'
 
-const REPORT_REQUEST_KEYWORDS = [
-  '분석해줘',
-  '리포트',
-  '정리해줘',
-  '생성해줘',
-  '보고서',
+const REPORT_REQUEST_PATTERNS = [
+  '리포트를생성',
+  '리포트생성',
+  '리포트를만들',
+  '리포트만들',
+  '리포트를만들어',
+  '리포트만들어',
+  '리포트를주세요',
+  '리포트주세요',
+  '리포트를해줘',
+  '리포트해줘',
+  '리포트를확인',
+  '리포트확인',
+  '리포트를볼게요',
+  '리포트볼게요',
+  '리포트를보여',
+  '리포트보여',
+  '분석리포트를생성',
+  '상세리포트를생성',
 ]
 
 function hasExplicitReportRequest(text: string) {
-  return REPORT_REQUEST_KEYWORDS.some((keyword) => text.includes(keyword))
+  const normalized = text.replace(/\s+/g, '')
+  return REPORT_REQUEST_PATTERNS.some((pattern) => normalized.includes(pattern))
 }
 
 function createExplorationState() {
@@ -257,7 +271,7 @@ export function AgentPanel({
         if (kind === 'reply') {
           const state = explorationStateRef.current
           if (state.questionAsked && state.userResponded) {
-            maybeOfferReport('dialog')
+            maybeOfferReport()
           }
           return
         }
@@ -313,7 +327,6 @@ export function AgentPanel({
   const handleGenerateReport = useCallback(
     async (
       kind: 'report' | 'regenerate_report' = 'report',
-      options?: { appendPrompt?: boolean },
     ) => {
       requestReportRefresh(makeReportRequestSnapshot())
 
@@ -333,51 +346,38 @@ export function AgentPanel({
 
       onOpenReportTab?.()
       onReportAnnouncementVisibleChange?.(false)
-      if (options?.appendPrompt !== false) {
-        void append(
-          kind === 'report' ? '리포트를 생성해줘.' : '새 리포트를 다시 생성해줘.',
-          undefined,
-          { kind: 'report', source: 'user_input' },
-        )
-      }
     },
-    [
-      append,
-      disableQuickActionMessage,
-      makeReportRequestSnapshot,
-      onOpenReportTab,
-      onReportAnnouncementVisibleChange,
-    ],
+    [disableQuickActionMessage, makeReportRequestSnapshot, onOpenReportTab, onReportAnnouncementVisibleChange],
   )
 
   const handleRegenerateReport = useCallback(() => {
     void handleGenerateReport('regenerate_report')
   }, [handleGenerateReport])
 
-  const maybeOfferReport = useCallback(
-    (reason: 'dialog' | 'radius' | 'explicit') => {
-      const state = explorationStateRef.current
-      if (state.reportOffered && reason !== 'explicit') return
+  const maybeOfferReport = useCallback(() => {
+    const state = explorationStateRef.current
+    if (state.reportOffered) return
 
-      const existingOfferId = reportOfferIdRef.current
-      if (existingOfferId) {
-        disableQuickActionMessage(existingOfferId)
-        reportOfferIdRef.current = null
-      }
+    const existingOfferId = reportOfferIdRef.current
+    if (existingOfferId) {
+      disableQuickActionMessage(existingOfferId)
+      reportOfferIdRef.current = null
+    }
 
-      const id = addAgentMessage({
-        content: '지금까지 살펴본 내용을 바탕으로 상세 리포트를 생성해드릴까요?',
-        messageType: 'report_offer',
-      })
-      reportOfferIdRef.current = id
-      setExplorationState((prev) => ({ ...prev, reportOffered: true }))
+    const id = addAgentMessage({
+      content: '지금까지 살펴본 내용을 바탕으로 상세 리포트를 생성해드릴까요?',
+      messageType: 'report_offer',
+    })
+    reportOfferIdRef.current = id
+    setExplorationState((prev) => ({ ...prev, reportOffered: true }))
+  }, [addAgentMessage, disableQuickActionMessage])
 
-      if (reason === 'explicit' && state.reportOffered) {
-        void handleGenerateReport('report', { appendPrompt: false })
-      }
-    },
-    [addAgentMessage, disableQuickActionMessage, handleGenerateReport],
-  )
+  const promptRadiusSelection = useCallback(() => {
+    addAgentMessage({
+      content: '어떤 반경으로 바꿔볼까요?',
+      messageType: 'ask_radius',
+    })
+  }, [addAgentMessage])
 
   const dismissReportOffer = useCallback(() => {
     if (reportOfferIdRef.current) {
@@ -563,6 +563,21 @@ export function AgentPanel({
     if (!trimmed || isLoading) return
 
     const explicitReportRequest = hasExplicitReportRequest(trimmed)
+
+    if (explicitReportRequest) {
+      const userMessage: UIMessage = {
+        id: `report-request-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+        role: 'user',
+        parts: [{ type: 'text', text: trimmed }],
+      }
+
+      setMessages((prev) => [...prev, userMessage])
+      setInput('')
+      setShowQuickStart(false)
+      void handleGenerateReport('report')
+      return
+    }
+
     const latestAssistantMessage = [initMessage, ...decoratedChatMessages, ...localMessages]
       .filter((message): message is AgentMessage => message.role === 'agent')
       .at(-1)
@@ -579,18 +594,10 @@ export function AgentPanel({
 
     setShowQuickStart(false)
     setLocalMessages([])
-      void append(trimmed, undefined, {
-        kind: explicitReportRequest ? 'report' : 'reply',
-        source: 'user_input',
-      })
-
-    if (explicitReportRequest) {
-      if (explorationStateRef.current.reportOffered) {
-        void handleGenerateReport('report', { appendPrompt: false })
-      } else {
-        maybeOfferReport('explicit')
-      }
-    }
+    void append(trimmed, undefined, {
+      kind: 'reply',
+      source: 'user_input',
+    })
   }
 
   const handleQuickStart = (location: string, category: string) => {
@@ -652,6 +659,13 @@ export function AgentPanel({
       markQuickReplyTypeUsed(type)
 
       if (option.action === 'generate_report') {
+        const userMessage: UIMessage = {
+          id: `report-request-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role: 'user',
+          parts: [{ type: 'text', text: option.text }],
+        }
+
+        setMessages((prev) => [...prev, userMessage])
         void handleGenerateReport('report')
         return
       }
@@ -667,7 +681,7 @@ export function AgentPanel({
 
       void append(option.text, undefined, { kind: 'reply', source: 'user_input' })
     },
-    [append, disableQuickActionMessage, handleGenerateReport, markQuickReplyTypeUsed],
+    [append, disableQuickActionMessage, handleGenerateReport, markQuickReplyTypeUsed, setMessages],
   )
 
   const handleExplorationQuickSelect = useCallback(
@@ -687,15 +701,19 @@ export function AgentPanel({
       if (type === 'ask_radius') {
         const nextRadius = typeof value === 'number' ? value : Number(value)
         if (!Number.isFinite(nextRadius)) return
+        const currentRadius = analysisContext.radius ?? null
+        if (currentRadius === nextRadius) return
 
         markResponded()
         setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
         explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
         setAnalysisContext({ radius: nextRadius })
-        void append(`${nextRadius}m로 반경을 바꿔볼게요.`, undefined, {
-          kind: 'reply',
-          source: 'user_input',
-        })
+        const userMessage: UIMessage = {
+          id: `radius-request-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
+          role: 'user',
+          parts: [{ type: 'text', text: `${nextRadius}m로 반경을 바꿔볼게요.` }],
+        }
+        setMessages((prev) => [...prev, userMessage])
         return
       }
 
@@ -721,17 +739,13 @@ export function AgentPanel({
         markResponded()
 
         if (value === 'report') {
-          maybeOfferReport('explicit')
+          void handleGenerateReport('report')
           return
         }
 
         if (value === 'radius') {
-          setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
-          explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
-          void append('반경을 바꿔볼게요.', undefined, {
-            kind: 'reply',
-            source: 'user_input',
-          })
+          markResponded()
+          promptRadiusSelection()
           return
         }
 
@@ -752,12 +766,7 @@ export function AgentPanel({
 
         if (value === 'explore_more') {
           markResponded()
-          setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
-          explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
-          void append('반경을 더 바꿔볼게요.', undefined, {
-            kind: 'reply',
-            source: 'user_input',
-          })
+          promptRadiusSelection()
           return
         }
 
@@ -767,7 +776,7 @@ export function AgentPanel({
         }
       }
     },
-    [append, disableQuickActionMessage, handleGenerateReport, maybeOfferReport, setAnalysisContext],
+    [append, analysisContext.radius, disableQuickActionMessage, handleGenerateReport, promptRadiusSelection, setAnalysisContext, setMessages],
   )
 
   const handleConfirmAction = useCallback(
@@ -957,6 +966,7 @@ export function AgentPanel({
           disabledQuickActionIds={disabledQuickActionIds}
           usedQuickReplyTypes={usedQuickReplyTypes}
           hiddenIndustryPromptId={hiddenIndustryPromptId}
+          selectedRadius={analysisContext.radius ?? null}
           isStreaming={isLoading}
           disableConfirm={geoStatus === 'loading'}
         />

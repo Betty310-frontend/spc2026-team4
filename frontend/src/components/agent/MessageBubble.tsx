@@ -29,6 +29,7 @@ interface MessageBubbleProps {
   usedQuickReplyTypes?: Set<QuickReplyType>
   isLastAssistantMessage?: boolean
   hiddenIndustryPromptId?: string | null
+  selectedRadius?: number | null
 }
 
 function isIndustryQuestion(content: string) {
@@ -53,6 +54,7 @@ export function MessageBubble({
   hiddenIndustryPromptId,
   usedQuickReplyTypes,
   isLastAssistantMessage = false,
+  selectedRadius = null,
 }: MessageBubbleProps) {
   if (message.role === 'user') {
     return (
@@ -133,6 +135,7 @@ export function MessageBubble({
           <ExplorationQuickButtons
             type={message.messageType!}
             disabled={buttonsDisabled}
+            selectedValue={message.messageType === 'ask_radius' ? selectedRadius : null}
             onSelect={(value) =>
               onExplorationQuickSelect(message.id, message.messageType!, value)
             }
