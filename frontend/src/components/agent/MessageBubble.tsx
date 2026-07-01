@@ -3,6 +3,7 @@ import { Button } from '@/components/ui/button'
 import { AgentMessage, UserMessage } from '@/types/message'
 import { AgentMarkdown } from './AgentMarkdown'
 import { IndustryQuickButtons } from './IndustryQuickButtons'
+import { ExplorationQuickButtons } from './ExplorationQuickButtons'
 import { ChevronRight } from 'lucide-react'
 
 interface MessageBubbleProps {
@@ -10,8 +11,14 @@ interface MessageBubbleProps {
   isStreaming?: boolean
   isError?: boolean
   buttonsDisabled?: boolean
+  disabledQuickActionIds?: Set<string>
   onConfirmAction?: (action: string) => void
   onIndustryQuickSelect?: (text: string, messageId: string) => void
+  onExplorationQuickSelect?: (
+    messageId: string,
+    type: NonNullable<AgentMessage['messageType']>,
+    value: string | number,
+  ) => void
   hiddenIndustryPromptId?: string | null
 }
 
@@ -29,8 +36,10 @@ export function MessageBubble({
   isStreaming,
   isError = false,
   buttonsDisabled,
+  disabledQuickActionIds,
   onConfirmAction,
   onIndustryQuickSelect,
+  onExplorationQuickSelect,
   hiddenIndustryPromptId,
 }: MessageBubbleProps) {
   if (message.role === 'user') {
@@ -51,6 +60,12 @@ export function MessageBubble({
     !message.confirmedAction &&
     hiddenIndustryPromptId !== message.id &&
     isIndustryQuestion(message.content)
+  const showExplorationButtons =
+    !isError &&
+    !message.confirmedAction &&
+    message.messageType != null &&
+    onExplorationQuickSelect != null &&
+    (disabledQuickActionIds?.has(message.id) !== true)
 
   return (
     <div className="flex flex-col items-start">
@@ -85,10 +100,23 @@ export function MessageBubble({
         </div>
       )}
 
+      {showExplorationButtons && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          <span className="text-muted-foreground text-[10px]">빠른 답변</span>
+          <ExplorationQuickButtons
+            type={message.messageType!}
+            disabled={buttonsDisabled}
+            onSelect={(value) =>
+              onExplorationQuickSelect(message.id, message.messageType!, value)
+            }
+          />
+        </div>
+      )}
+
       {showButtons && (
         <div className="mt-2 flex flex-wrap gap-2">
           {message.confirmButtons!.map((btn) => (
-            btn.action === 'open_report' || btn.action === 'regenerate_report' ? (
+            btn.action === 'open_report' || btn.action === 'regenerate_report' || btn.action === 'generate_report' ? (
               <button
                 key={btn.action}
                 type="button"
@@ -100,7 +128,7 @@ export function MessageBubble({
                 <span>{btn.label}</span>
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
-            ) : btn.action === 'dismiss_location_change' ? (
+            ) : btn.action === 'dismiss_location_change' || btn.action === 'dismiss_report_offer' ? (
               <button
                 key={btn.action}
                 type="button"

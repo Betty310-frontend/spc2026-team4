@@ -1,7 +1,7 @@
 'use client'
 
 import { useEffect, useRef } from 'react'
-import { AgentMessage, ChatMessage } from '@/types/message'
+import { AgentMessage, ChatMessage, ExplorationMessageType } from '@/types/message'
 import { MessageBubble } from './MessageBubble'
 import { ToolCallCard } from './ToolCallCard'
 
@@ -9,6 +9,12 @@ interface MessageThreadProps {
   messages: ChatMessage[]
   onConfirmAction?: (action: string) => void
   onIndustryQuickSelect?: (text: string, messageId: string) => void
+  onExplorationQuickSelect?: (
+    messageId: string,
+    type: ExplorationMessageType,
+    value: string | number,
+  ) => void
+  disabledQuickActionIds?: Set<string>
   hiddenIndustryPromptId?: string | null
   isStreaming?: boolean
   disableConfirm?: boolean
@@ -18,6 +24,8 @@ export function MessageThread({
   messages,
   onConfirmAction,
   onIndustryQuickSelect,
+  onExplorationQuickSelect,
+  disabledQuickActionIds,
   hiddenIndustryPromptId,
   isStreaming,
   disableConfirm,
@@ -46,6 +54,8 @@ export function MessageThread({
             buttonsDisabled={disableConfirm}
             onConfirmAction={onConfirmAction}
             onIndustryQuickSelect={onIndustryQuickSelect}
+            onExplorationQuickSelect={onExplorationQuickSelect}
+            disabledQuickActionIds={disabledQuickActionIds}
             hiddenIndustryPromptId={hiddenIndustryPromptId}
           />
         )

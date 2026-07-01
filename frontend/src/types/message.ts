@@ -13,6 +13,12 @@ export interface ConfirmButton {
   action: string
 }
 
+export type ExplorationMessageType =
+  | 'ask_radius'
+  | 'ask_population'
+  | 'competition'
+  | 'report_offer'
+
 export interface UserMessage extends BaseMessage {
   role: 'user'
   content: string
@@ -21,6 +27,7 @@ export interface UserMessage extends BaseMessage {
 export interface AgentMessage extends BaseMessage {
   role: 'agent'
   content: string
+  messageType?: ExplorationMessageType
   confirmButtons?: ConfirmButton[]
   confirmedAction?: string
   isError?: boolean
