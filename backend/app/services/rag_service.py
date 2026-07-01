@@ -73,8 +73,8 @@ def search_rag_chunks(
     seen_titles = set()
 
     for doc, meta, distance in zip(documents, metadatas, distances):
-        document_title = meta.get("document_title")
-        document_title = document_title.replace("이미용업", "미용업")
+        raw_title = meta.get("document_title")
+        document_title = str(raw_title or "").replace("이미용업", "미용업")
         clean_title = str(document_title or "").replace("[pdf]", "").strip()
 
         if clean_title in seen_titles:
