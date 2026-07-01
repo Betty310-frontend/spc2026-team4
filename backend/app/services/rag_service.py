@@ -74,6 +74,7 @@ def search_rag_chunks(
 
     for doc, meta, distance in zip(documents, metadatas, distances):
         document_title = meta.get("document_title")
+        document_title = document_title.replace("이미용업", "미용업")
         clean_title = str(document_title or "").replace("[pdf]", "").strip()
 
         if clean_title in seen_titles:
@@ -81,13 +82,21 @@ def search_rag_chunks(
 
         seen_titles.add(clean_title)
 
+        source_url = meta.get("source_url") or ""
+
+        if (
+            not source_url
+            and clean_title == "프랜차이즈(미용업) 표준계약서 [2024.12. 개정]"
+        ):
+            source_url = "https://www.ftc.go.kr/www/selectBbsNttView.do?pageUnit=10&pageIndex=1&searchCnd=all&key=204&bordCd=203&nttSn=11313"
+
         chunks.append(
             {
                 "document_title": document_title,
                 "file_path": meta.get("file_path"),
                 "file_type": meta.get("file_type"),
                 "section_title": meta.get("section_title"),
-                "source_url": meta.get("source_url"),
+                "source_url": source_url,
                 "chunk_text": doc,
                 "distance": distance,
             }
