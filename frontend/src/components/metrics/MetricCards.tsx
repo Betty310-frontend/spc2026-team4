@@ -146,14 +146,14 @@ export function MetricCards() {
   const result = useAnalysisResult()
   const { analysisContext } = useAnalysisContext()
   const currentHexCount = useMemo(() => {
-    const center = analysisContext.center
+    const center = analysisContext.confirmedPosition
     const resolution = result.h3Resolution
     if (!center || resolution == null || !result.h3Hexagons.length) return null
 
     const currentHexIndex = latLngToCell(center.lat, center.lng, resolution)
     const currentHex = result.h3Hexagons.find((hex) => hex.h3Index === currentHexIndex)
     return currentHex?.count ?? 0
-  }, [analysisContext.center, result.h3Hexagons, result.h3Resolution])
+  }, [analysisContext.confirmedPosition, result.h3Hexagons, result.h3Resolution])
 
   return (
     <div className="space-y-2">

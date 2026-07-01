@@ -2,7 +2,7 @@
 
 import { useCallback, useRef, useEffect } from 'react'
 import { useAnalysisContext } from '@/store/analysisContext'
-import { useAnalysisResult, abortMapUpdate } from '@/store/analysisResult'
+import { useAnalysisResult, abortMapUpdate, clearReportData } from '@/store/analysisResult'
 import {
   fetchCompetitors,
   fetchPopulation,
@@ -11,7 +11,7 @@ import {
 } from '@/lib/api-client'
 import { applyCompetitors, normalizeCompetitors } from '@/lib/agent-event-bridge'
 import { isValidCategory } from '@/lib/category'
-import { reverseGeocode, resolveLocationToCenter } from '@/lib/geocode'
+import { resolveLocationToCenter } from '@/lib/geocode'
 import { getTierBadgeLabel } from '@/lib/metric-badge'
 import { getApiErrorMessage } from '@/constants/error-messages'
 import { formatNumber, formatPopulation } from '@/lib/number-format'
@@ -44,7 +44,7 @@ interface UseAnalysisOptions {
 }
 
 export function useAnalysis(options: UseAnalysisOptions = {}) {
-  const { setAnalysisContext } = useAnalysisContext()
+  const { confirmPosition } = useAnalysisContext()
   const {
     updateMetric,
     setMapOptions,
@@ -55,7 +55,6 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
     isLoading,
   } = useAnalysisResult()
   const lastParamsRef = useRef<AnalysisParams | null>(null)
-  const setAnalysisContextRef = useRef(setAnalysisContext)
 
   // options를 ref로 캡처해 useCallback 의존성 안정화
   const onAgentMessageRef = useRef(options.onAgentMessage)
@@ -63,13 +62,10 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
     onAgentMessageRef.current = options.onAgentMessage
   }, [options.onAgentMessage])
 
-  useEffect(() => {
-    setAnalysisContextRef.current = setAnalysisContext
-  }, [setAnalysisContext])
-
   const runAnalysis = useCallback(
     async (params: AnalysisParams) => {
       lastParamsRef.current = params
+      clearReportData()
 
       if (!isValidCategory(params.업종)) {
         setH3Hexagons([])
@@ -89,6 +85,9 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
           params.lat != null && params.lng != null
             ? { lat: params.lat, lng: params.lng }
             : null
+        let confirmedPosition:
+          | Awaited<ReturnType<typeof confirmPosition>>
+          | null = null
 
         if (!resolvedCenter) {
           const locationResult = await resolveLocationToCenter(params.위치)
@@ -97,19 +96,21 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
           }
 
           resolvedCenter = locationResult.center
-          setAnalysisContextRef.current({
-            center: resolvedCenter,
-            fullLocationName: locationResult.label,
-          })
-        } else {
-          setAnalysisContextRef.current({
-            center: resolvedCenter,
-          })
         }
 
-        const geoPromise = params.행정동코드
-          ? Promise.resolve(null)
-          : reverseGeocode(resolvedCenter.lat, resolvedCenter.lng)
+        if (params.lat != null && params.lng != null && params.행정동코드) {
+          confirmedPosition = {
+            lat: resolvedCenter.lat,
+            lng: resolvedCenter.lng,
+            dongName: params.위치,
+            dongCode: params.행정동코드,
+          }
+        } else {
+          confirmedPosition = await confirmPosition(resolvedCenter.lat, resolvedCenter.lng)
+          if (!confirmedPosition) {
+            throw new ApiError(400, '좌표의 지역 정보를 찾지 못했습니다.')
+          }
+        }
 
         const h3Resolution = clampH3Resolution(getH3Resolution(params.반경 ?? 500))
         const compPromise = fetchCompetitors({
@@ -162,34 +163,11 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
           setH3Resolution(null)
         })
 
-        geoPromise.then((geoResult) => {
-          if (!geoResult) return
-
-          if (!params.행정동코드) {
-            setAnalysisContextRef.current({
-              dongCode: geoResult.dongCode,
-              fullLocationName: geoResult.fullName,
-            })
-          } else {
-            setAnalysisContextRef.current({
-              fullLocationName: geoResult.fullName,
-            })
-          }
+        const populationPromise = fetchPopulation({
+          행정동코드: params.행정동코드 ?? confirmedPosition.dongCode,
+          업종: params.업종,
+          // 시간대: ['11'],
         })
-
-        const populationPromise = geoPromise
-          .then((geoResult) => params.행정동코드 ?? geoResult?.dongCode ?? null)
-          .then((populationDongCode) => {
-            if (!populationDongCode) {
-              throw new Error('행정동코드 없음')
-            }
-
-            return fetchPopulation({
-              행정동코드: populationDongCode,
-              업종: params.업종,
-              // 시간대: ['11'],
-            })
-          })
           .then((p) => {
             const percentile = p.percentile
             const populationBadge = getTierBadgeLabel(percentile) || undefined
@@ -242,7 +220,7 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
         stopLoading('analysis')
       }
     },
-    [setH3Hexagons, setH3Resolution, startLoading, stopLoading, updateMetric],
+    [confirmPosition, setH3Hexagons, setH3Resolution, startLoading, stopLoading, updateMetric],
   )
 
   const retry = useCallback(() => {
@@ -251,6 +229,7 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
 
   const reset = useCallback(() => {
     abortMapUpdate()
+    clearReportData()
     setMapOptions(null)
     setH3Hexagons([])
     setH3Resolution(null)

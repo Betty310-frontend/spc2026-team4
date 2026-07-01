@@ -23,7 +23,7 @@ export default function RightPanel({ status, messages, input }: RightPanelProps)
     <div className="flex h-full flex-col px-[10px] pt-[10px]">
       {/* 에이전트 헤더 */}
       <div className="mb-2 flex flex-shrink-0 items-center justify-between border-b border-black/[0.11] pb-[6px]">
-        <span className="text-[10px] font-medium text-gray-900">AI 에이전트</span>
+        <span className="text-[10px] font-medium text-gray-900">상권 분석 AI 에이전트</span>
         <span className="flex items-center gap-[3px] text-[9px]" style={{ color: TEXT_MUTED }}>
           <span
             className="h-[5px] w-[5px] flex-shrink-0 rounded-full"
