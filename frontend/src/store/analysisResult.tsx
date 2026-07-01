@@ -63,6 +63,7 @@ export type LoadingKey =
 type Action =
   | { type: 'UPDATE_METRIC'; key: MetricKey; data: Partial<MetricCard> }
   | { type: 'SET_REPORT'; report: ReportData | null }
+  | { type: 'CLEAR_REPORT' }
   | { type: 'REQUEST_REPORT_REFRESH'; snapshot?: ReportRequestSnapshot }
   | { type: 'SET_MAP_OPTIONS'; mapOptions: MapOptions | null }
   | { type: 'SET_H3_HEXAGONS'; h3Hexagons: H3HexagonItem[] }
@@ -96,6 +97,13 @@ function reducer(state: AnalysisResult, action: Action): AnalysisResult {
       return { ...state, [action.key]: { ...state[action.key], ...action.data } }
     case 'SET_REPORT':
       return { ...state, report: action.report }
+    case 'CLEAR_REPORT':
+      return {
+        ...state,
+        report: null,
+        reportRequestToken: 0,
+        reportRequestSnapshot: null,
+      }
     case 'REQUEST_REPORT_REFRESH':
       return {
         ...state,
@@ -150,6 +158,7 @@ function reducer(state: AnalysisResult, action: Action): AnalysisResult {
 interface AnalysisResultContextValue extends AnalysisResult {
   updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
   setReportData: (report: ReportData | null) => void
+  clearReportData: () => void
   requestReportRefresh: (snapshot?: ReportRequestSnapshot) => void
   setMapOptions: (mapOptions: MapOptions | null) => void
   setH3Hexagons: (h3Hexagons: H3HexagonItem[]) => void
@@ -169,6 +178,7 @@ const AnalysisResultCtx = createContext<AnalysisResultContextValue | null>(null)
 type AnalysisResultActions = {
   updateMetric: (key: MetricKey, data: Partial<MetricCard>) => void
   setReportData: (report: ReportData | null) => void
+  clearReportData: () => void
   requestReportRefresh: (snapshot?: ReportRequestSnapshot) => void
   setMapOptions: (mapOptions: MapOptions | null) => void
   setH3Hexagons: (h3Hexagons: H3HexagonItem[]) => void
@@ -195,6 +205,10 @@ export function beginMapUpdate(reason?: string): void {
 
 export function requestReportRefresh(snapshot?: ReportRequestSnapshot): void {
   analysisResultActions?.requestReportRefresh(snapshot)
+}
+
+export function clearReportData(): void {
+  analysisResultActions?.clearReportData()
 }
 
 export function startLoading(key: LoadingKey): void {
@@ -224,6 +238,7 @@ export function AnalysisResultProvider({ children }: { children: React.ReactNode
       updateMetric: (key: MetricKey, data: Partial<MetricCard>) =>
         dispatch({ type: 'UPDATE_METRIC', key, data }),
       setReportData: (report: ReportData | null) => dispatch({ type: 'SET_REPORT', report }),
+      clearReportData: () => dispatch({ type: 'CLEAR_REPORT' }),
       requestReportRefresh: (snapshot?: ReportRequestSnapshot) =>
         dispatch({ type: 'REQUEST_REPORT_REFRESH', snapshot }),
       setMapOptions: (mapOptions: MapOptions | null) =>

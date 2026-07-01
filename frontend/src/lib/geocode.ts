@@ -49,6 +49,8 @@ interface KakaoMapsSdk {
   }
 }
 
+export type GeocodeSource = 'user_input' | 'quickstart' | 'geolocation'
+
 interface KakaoWindow extends Window {
   kakao?: KakaoMapsSdk
 }
@@ -67,6 +69,41 @@ function buildLocationQueries(location: string): string[] {
   ]
 
   return Array.from(new Set(candidates.filter(Boolean)))
+}
+
+const LOCATION_PATTERN = /(?:서울(?:특별시)?\s*)?[가-힣0-9][가-힣0-9\s]{0,20}?(?:역|동|가|구|읍|면|리|길|대로|사거리|삼거리)(?:\s*[가-힣0-9]{0,6})?/g
+
+function isLikelyLocationCandidate(candidate: string): boolean {
+  const compact = candidate.replace(/\s+/g, '')
+  if (!compact) return false
+  if (compact.length > 20) return false
+  if (/(프랜차이즈|개업|창업|운영|분석|궁금|생각|고려|추천|어때요|해주세요)/.test(compact)) {
+    return false
+  }
+  return true
+}
+
+export function extractLocationCandidateFromText(text: string): string | null {
+  const normalizedText = text.replace(/\s+/g, ' ').trim()
+  if (!normalizedText) return null
+
+  const beforeAction = normalizedText
+    .split(/(?:에서|으로|로|쪽|근처|부근|주변|앞|뒤|위|아래|안|내)/)[0]
+    ?.trim()
+
+  const candidates = [beforeAction ?? normalizedText, normalizedText]
+
+  for (const candidate of candidates) {
+    const matches = candidate.match(LOCATION_PATTERN)
+    if (matches?.length) {
+      const lastMatch = matches[matches.length - 1].trim()
+      if (isLikelyLocationCandidate(lastMatch)) {
+        return lastMatch
+      }
+    }
+  }
+
+  return null
 }
 
 function toCoords(result: KakaoPlaceResult): { lat: number; lng: number } | null {

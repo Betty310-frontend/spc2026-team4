@@ -5,8 +5,9 @@ import { DefaultChatTransport } from 'ai'
 import { UIMessage } from 'ai'
 import { useState, useMemo, useRef, useEffect } from 'react'
 import { useAnalysisContext } from '@/store/analysisContext'
+import type { AnalysisContext } from '@/types/analysis'
 
-import { useAnalysisResult, abortMapUpdate, requestReportRefresh } from '@/store/analysisResult'
+import { useAnalysisResult, abortMapUpdate } from '@/store/analysisResult'
 import { convertToChatMessages } from '@/lib/messageConverter'
 import { handleToolResult } from '@/lib/toolResultParser'
 import {
@@ -14,6 +15,8 @@ import {
   parseContextFromToolArgs,
   parseContextFromAssistantText,
 } from '@/lib/contextParser'
+import { extractCategoryFromText, isValidCategory, normalizeCategory } from '@/lib/category'
+import { extractLocationCandidateFromText, resolveLocationToCenter } from '@/lib/geocode'
 import { hasForbiddenWord } from '@/lib/guardrail'
 import {
   applyAgentEventToStore,
@@ -30,17 +33,30 @@ const { ANALYSIS_TOOL_NAMES, createChatRefreshGuard } = chatRefreshGuardModule a
   createChatRefreshGuard: () => {
     markRagSources: () => void
     markAnalysisTool: () => void
-    shouldRefreshReport: (hasAnalysisToolResult: boolean) => boolean
     reset: () => void
   }
 }
 
 interface UseAgentChatOptions {
   onChatError?: (error: Error) => void
+  onCategoryMissing?: () => void
+  onAssistantFinish?: (payload: {
+    kind: 'explore' | 'reply' | 'report'
+    text: string
+    hasQuestion: boolean
+  }) => void
 }
 
-export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
-  const { analysisContext, setAnalysisContext } = useAnalysisContext()
+interface AppendOptions {
+  kind?: 'explore' | 'reply' | 'report'
+  category?: string
+  source?: 'user_input' | 'quickstart' | 'geolocation' | 'assistant' | 'system'
+}
+
+export function useAgentChat(options: UseAgentChatOptions = {}) {
+  const { onChatError, onCategoryMissing, onAssistantFinish } = options
+  const { analysisContext, confirmPosition, getConfirmedPosition, setAnalysisContext } =
+    useAnalysisContext()
   const { updateMetric, setReportData, reset, startLoading, stopLoading } =
     useAnalysisResult()
   const [input, setInput] = useState('')
@@ -48,12 +64,23 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
   const appliedCompetitorMessagesRef = useRef<Set<string>>(new Set())
   const processedToolCallIdsRef = useRef<Set<string>>(new Set())
   const refreshGuardRef = useRef(createChatRefreshGuard())
+  const pendingMapCenterRef = useRef<{ center: { lat: number; lng: number }; dongName: string | null } | null>(null)
+  const skipDataMapConfirmRef = useRef(false)
+  const pendingAppendKindRef = useRef<'explore' | 'reply' | 'report'>('reply')
 
   // useChat options은 mount 시점에 클로저로 고정되므로 ref로 최신 콜백 유지
   const onChatErrorRef = useRef(onChatError)
+  const onCategoryMissingRef = useRef(onCategoryMissing)
+  const onAssistantFinishRef = useRef<UseAgentChatOptions['onAssistantFinish']>(undefined)
   useEffect(() => {
     onChatErrorRef.current = onChatError
   }, [onChatError])
+  useEffect(() => {
+    onCategoryMissingRef.current = onCategoryMissing
+  }, [onCategoryMissing])
+  useEffect(() => {
+    onAssistantFinishRef.current = onAssistantFinish
+  }, [onAssistantFinish])
 
   useEffect(() => {
     analysisContextRef.current = analysisContext
@@ -65,7 +92,7 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
     return typeof value === 'object' && value !== null
   }
 
-  const { messages, sendMessage, status, stop } = useChat({
+  const { messages, sendMessage, status, stop, setMessages } = useChat({
     transport,
 
     onData(dataPart) {
@@ -102,16 +129,13 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
           isRecord(dataPartAny.data.input)
         ) {
           refreshGuardRef.current.markAnalysisTool()
+          pendingMapCenterRef.current = null
           setAnalysisContext({
             center: null,
-            dongCode: null,
-            fullLocationName: null,
           })
           analysisContextRef.current = {
             ...analysisContextRef.current,
             center: null,
-            dongCode: null,
-            fullLocationName: null,
           }
           const parsedContext = parseContextFromToolArgs(
             'search_competitors',
@@ -128,32 +152,33 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
         }
 
         if (dataPartAny.type === 'data-map' && isRecord(dataPartAny.data)) {
+          if (skipDataMapConfirmRef.current) {
+            return
+          }
+
           const center = isRecord(dataPartAny.data.center)
             ? {
                 lat:
                   typeof dataPartAny.data.center.lat === 'number' ? dataPartAny.data.center.lat : null,
                 lng:
                   typeof dataPartAny.data.center.lng === 'number' ? dataPartAny.data.center.lng : null,
-              }
-            : null
+            }
+          : null
 
           if (typeof dataPartAny.data.dong_name === 'string' && dataPartAny.data.dong_name) {
             setAnalysisContext({
               location: dataPartAny.data.dong_name,
-              dongCode: null,
-              fullLocationName: null,
-              ...(center?.lat != null && center?.lng != null
-                ? { center: { lat: center.lat, lng: center.lng } }
-                : {}),
             })
             analysisContextRef.current = {
               ...analysisContextRef.current,
               location: dataPartAny.data.dong_name,
-              dongCode: null,
-              fullLocationName: null,
-              ...(center?.lat != null && center?.lng != null
-                ? { center: { lat: center.lat, lng: center.lng } }
-                : {}),
+            }
+          }
+
+          if (center?.lat != null && center?.lng != null) {
+            pendingMapCenterRef.current = {
+              center: { lat: center.lat, lng: center.lng },
+              dongName: typeof dataPartAny.data.dong_name === 'string' ? dataPartAny.data.dong_name : null,
             }
           }
           return
@@ -197,18 +222,6 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
     },
 
     onFinish({ message }: { message: UIMessage }) {
-      const hasAnalysisToolResult = message.parts.some(
-        (part) =>
-          part.type === 'dynamic-tool' ||
-          part.type === 'tool-search_competitors' ||
-          part.type === 'tool-get_population_flow' ||
-          part.type === 'tool-calc_competition_percentile' ||
-          part.type === 'tool-get_positioning_data',
-      )
-      const shouldRefreshReport = refreshGuardRef.current.shouldRefreshReport(
-        hasAnalysisToolResult,
-      )
-
       // tool result → 지표 카드 업데이트 + context 파싱
       for (const part of message.parts) {
         if (
@@ -251,6 +264,20 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
         }
       }
 
+      const pendingMapCenter = pendingMapCenterRef.current
+      if (pendingMapCenter && !skipDataMapConfirmRef.current) {
+        pendingMapCenterRef.current = null
+        void confirmPosition(pendingMapCenter.center.lat, pendingMapCenter.center.lng).then((confirmed) => {
+          if (!confirmed) return
+          analysisContextRef.current = {
+            ...analysisContextRef.current,
+            confirmedPosition: confirmed,
+            location: pendingMapCenter.dongName ?? confirmed.dongName,
+            dongCode: confirmed.dongCode,
+          }
+        })
+      }
+
       // 금지어 필터는 텍스트에만 적용하고, 툴 결과/지도 반영은 먼저 끝낸다.
       const textContent = message.parts
         .filter((p) => p.type === 'text')
@@ -269,21 +296,21 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
           ...assistantContext,
         }
       }
-      if (shouldRefreshReport) {
-        requestReportRefresh({
-          위치: analysisContextRef.current.location ?? '',
-          업종: analysisContextRef.current.industry ?? '',
-          반경: analysisContextRef.current.radius ?? undefined,
-          lat: analysisContextRef.current.center?.lat ?? undefined,
-          lng: analysisContextRef.current.center?.lng ?? undefined,
-        })
-      }
+      const hasQuestion = /[?？]|(?:까요|나요|죠|어떨까요|궁금)/.test(textContent)
+      onAssistantFinishRef.current?.({
+        kind: pendingAppendKindRef.current,
+        text: textContent,
+        hasQuestion,
+      })
+      pendingAppendKindRef.current = 'reply'
 
       refreshGuardRef.current.reset()
     },
 
     onError(error: Error) {
       abortMapUpdate()
+      pendingMapCenterRef.current = null
+      skipDataMapConfirmRef.current = false
       refreshGuardRef.current.reset()
       console.error('[agent:error]', error)
       onChatErrorRef.current?.(error)
@@ -315,30 +342,127 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
     return undefined
   }, [isLoading, startLoading, stopLoading])
 
-  const append = (text: string) => {
-    setInput('')
+  const append = async (
+    text: string,
+    contextOverride?: Partial<AnalysisContext>,
+    options?: AppendOptions,
+  ) => {
     refreshGuardRef.current.reset()
+    pendingAppendKindRef.current = options?.kind ?? 'reply'
+    const source = options?.source ?? 'user_input'
+    const forcedCategory = options?.category?.trim() || null
+    const baseContext = contextOverride
+      ? { ...analysisContextRef.current, ...contextOverride }
+      : analysisContextRef.current
+    let nextContext = baseContext
+    const parsedCategory = extractCategoryFromText(text)
     const parsedRadius = extractRadiusFromText(text)
-    const nextRadius = parsedRadius ?? analysisContextRef.current.radius ?? 500
+    const locationCandidate = extractLocationCandidateFromText(text)
+    let confirmedPosition = getConfirmedPosition() ?? baseContext.confirmedPosition ?? null
+    let nextLocation = confirmedPosition?.dongName ?? baseContext.location ?? null
+    const resolvedIndustry =
+      (forcedCategory ? normalizeCategory(forcedCategory) : null) ??
+      normalizeCategory(parsedCategory) ??
+      baseContext.industry
+    let resolvedLocally = false
 
-    if (parsedRadius != null && parsedRadius !== analysisContextRef.current.radius) {
-      setAnalysisContext({ radius: parsedRadius })
+    pendingMapCenterRef.current = null
+    skipDataMapConfirmRef.current = false
+
+    const canResolveLocation =
+      source === 'user_input' || source === 'quickstart' || source === 'geolocation'
+
+    if (locationCandidate && canResolveLocation) {
+      const locationResult = await resolveLocationToCenter(locationCandidate)
+      if (!locationResult) {
+        console.warn('[chat] 호출 차단: 위치 키워드를 찾지 못함', { text, locationCandidate })
+        return
+      }
+
+      const confirmed = await confirmPosition(locationResult.center.lat, locationResult.center.lng)
+      if (!confirmed) {
+        console.warn('[chat] 호출 차단: 위치 확정 실패', { text, locationCandidate })
+        return
+      }
+
+      confirmedPosition = confirmed
+      nextLocation = confirmed.dongName
+      resolvedLocally = true
+      skipDataMapConfirmRef.current = true
       analysisContextRef.current = {
         ...analysisContextRef.current,
-        radius: parsedRadius,
+        confirmedPosition: confirmed,
+        location: confirmed.dongName,
+        locationSource: source,
+        dongCode: confirmed.dongCode,
       }
+      setAnalysisContext({
+        confirmedPosition: confirmed,
+        location: confirmed.dongName,
+        locationSource: source,
+        dongCode: confirmed.dongCode,
+      })
+    } else if (locationCandidate && !canResolveLocation) {
+      console.warn('[geocode] 차단: 허용되지 않은 출처', { source, text, locationCandidate })
     }
+
+    if (!confirmedPosition) {
+      console.warn('[chat] 호출 차단: confirmedPosition이 없음', { text })
+      return
+    }
+
+    if (!isValidCategory(resolvedIndustry)) {
+      console.warn('[chat] 호출 차단: category가 비어있음', { text })
+      onCategoryMissingRef.current?.()
+      return
+    }
+
+    const nextIndustry = forcedCategory ? normalizeCategory(forcedCategory) : normalizeCategory(parsedCategory)
+    if (nextIndustry && nextIndustry !== baseContext.industry) {
+      setAnalysisContext({ industry: nextIndustry })
+      nextContext = { ...nextContext, industry: nextIndustry }
+    }
+
+    if (parsedRadius != null && parsedRadius !== baseContext.radius) {
+      setAnalysisContext({ radius: parsedRadius })
+      nextContext = { ...nextContext, radius: parsedRadius }
+    }
+
+    nextContext = {
+      ...nextContext,
+      confirmedPosition,
+      location: nextLocation,
+      dongCode: confirmedPosition.dongCode,
+    }
+
+    if (
+      contextOverride ||
+      parsedRadius != null ||
+      parsedCategory ||
+      forcedCategory ||
+      confirmedPosition ||
+      resolvedLocally
+    ) {
+      analysisContextRef.current = nextContext
+    }
+
+    const nextRadius = parsedRadius ?? nextContext.radius ?? 500
 
     sendMessage(
       { text },
       {
         body: {
-          station: analysisContextRef.current.location ?? '',
-          category: analysisContextRef.current.industry ?? '',
+          station: nextLocation ?? '',
+          category: resolvedIndustry,
           radius: nextRadius,
+          lat: confirmedPosition?.lat ?? undefined,
+          lng: confirmedPosition?.lng ?? undefined,
+          mode: pendingAppendKindRef.current,
         },
       },
     )
+
+    setInput('')
   }
 
   return {
@@ -346,11 +470,14 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
     input,
     setInput,
     append,
+    setMessages,
     isLoading,
     agentStatus: isLoading ? ('analyzing' as const) : ('idle' as const),
     stop,
     startNewAnalysis: () => {
       abortMapUpdate()
+      pendingMapCenterRef.current = null
+      skipDataMapConfirmRef.current = false
       appliedCompetitorMessagesRef.current.clear()
       processedToolCallIdsRef.current.clear()
       refreshGuardRef.current.reset()

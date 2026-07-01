@@ -3,6 +3,9 @@ import { Button } from '@/components/ui/button'
 import { AgentMessage, UserMessage } from '@/types/message'
 import { AgentMarkdown } from './AgentMarkdown'
 import { IndustryQuickButtons } from './IndustryQuickButtons'
+import { ExplorationQuickButtons } from './ExplorationQuickButtons'
+import { QuickReplyButtons } from './QuickReplyButtons'
+import { detectQuickReplyType, type QuickReplyType } from '@/lib/quickReply'
 import { ChevronRight } from 'lucide-react'
 
 interface MessageBubbleProps {
@@ -10,9 +13,23 @@ interface MessageBubbleProps {
   isStreaming?: boolean
   isError?: boolean
   buttonsDisabled?: boolean
+  disabledQuickActionIds?: Set<string>
   onConfirmAction?: (action: string) => void
   onIndustryQuickSelect?: (text: string, messageId: string) => void
+  onExplorationQuickSelect?: (
+    messageId: string,
+    type: NonNullable<AgentMessage['messageType']>,
+    value: string | number,
+  ) => void
+  onQuickReplySelect?: (
+    messageId: string,
+    type: QuickReplyType,
+    option: { label: string; text: string; action?: 'generate_report' | 'dismiss' },
+  ) => void
+  usedQuickReplyTypes?: Set<QuickReplyType>
+  isLastAssistantMessage?: boolean
   hiddenIndustryPromptId?: string | null
+  selectedRadius?: number | null
 }
 
 function isIndustryQuestion(content: string) {
@@ -29,9 +46,15 @@ export function MessageBubble({
   isStreaming,
   isError = false,
   buttonsDisabled,
+  disabledQuickActionIds,
   onConfirmAction,
   onIndustryQuickSelect,
+  onExplorationQuickSelect,
+  onQuickReplySelect,
   hiddenIndustryPromptId,
+  usedQuickReplyTypes,
+  isLastAssistantMessage = false,
+  selectedRadius = null,
 }: MessageBubbleProps) {
   if (message.role === 'user') {
     return (
@@ -51,6 +74,27 @@ export function MessageBubble({
     !message.confirmedAction &&
     hiddenIndustryPromptId !== message.id &&
     isIndustryQuestion(message.content)
+  const quickReplyType =
+    !isError && !message.confirmedAction && !isStreaming
+      ? message.messageType === 'report_offer'
+        ? 'report_offer'
+        : detectQuickReplyType(message.content)
+      : null
+  const showExplorationButtons =
+    !isError &&
+    !message.confirmedAction &&
+    message.messageType != null &&
+    message.messageType !== 'report_offer' &&
+    onExplorationQuickSelect != null &&
+    !isStreaming &&
+    quickReplyType == null &&
+    (disabledQuickActionIds?.has(message.id) !== true)
+  const showQuickReplies =
+    quickReplyType != null &&
+    onQuickReplySelect != null &&
+    isLastAssistantMessage &&
+    !(usedQuickReplyTypes?.has(quickReplyType) === true) &&
+    (disabledQuickActionIds?.has(message.id) !== true)
 
   return (
     <div className="flex flex-col items-start">
@@ -85,10 +129,35 @@ export function MessageBubble({
         </div>
       )}
 
+      {showExplorationButtons && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          <span className="text-muted-foreground text-[10px]">빠른 답변</span>
+          <ExplorationQuickButtons
+            type={message.messageType!}
+            disabled={buttonsDisabled}
+            selectedValue={message.messageType === 'ask_radius' ? selectedRadius : null}
+            onSelect={(value) =>
+              onExplorationQuickSelect(message.id, message.messageType!, value)
+            }
+          />
+        </div>
+      )}
+
+      {showQuickReplies && quickReplyType && (
+        <div className="mt-2 flex flex-col gap-1.5">
+          <span className="text-muted-foreground text-[10px]">빠른 답변</span>
+          <QuickReplyButtons
+            type={quickReplyType}
+            disabled={buttonsDisabled}
+            onSelect={(option) => onQuickReplySelect(message.id, quickReplyType, option)}
+          />
+        </div>
+      )}
+
       {showButtons && (
         <div className="mt-2 flex flex-wrap gap-2">
           {message.confirmButtons!.map((btn) => (
-            btn.action === 'open_report' || btn.action === 'regenerate_report' ? (
+            btn.action === 'open_report' || btn.action === 'regenerate_report' || btn.action === 'generate_report' ? (
               <button
                 key={btn.action}
                 type="button"
@@ -100,7 +169,7 @@ export function MessageBubble({
                 <span>{btn.label}</span>
                 <ChevronRight className="h-3.5 w-3.5" />
               </button>
-            ) : btn.action === 'dismiss_location_change' ? (
+            ) : btn.action === 'dismiss_location_change' || btn.action === 'dismiss_report_offer' ? (
               <button
                 key={btn.action}
                 type="button"

@@ -270,14 +270,14 @@ function ReportSectionBody({
   const [error, setError] = useState<string | null>(null)
   const [checked, setChecked] = useState<Record<number, boolean>>({})
   const [isExportingPdf, setIsExportingPdf] = useState(false)
-  const lastFetchedTokenRef = useRef<number>(-1)
+  const lastFetchedTokenRef = useRef<number>(0)
   const latestQueryKeyRef = useRef(queryKey)
   const latestReportRequestRef = useRef({
     위치: analysisContext.location ?? '',
     업종: analysisContext.industry ?? '',
     반경: analysisContext.radius ?? undefined,
-    lat: analysisContext.center?.lat ?? undefined,
-    lng: analysisContext.center?.lng ?? undefined,
+    lat: analysisContext.confirmedPosition?.lat ?? undefined,
+    lng: analysisContext.confirmedPosition?.lng ?? undefined,
   })
  
   const reportContentRef = useRef<HTMLDivElement>(null)
@@ -291,12 +291,12 @@ function ReportSectionBody({
       위치: analysisContext.location ?? '',
       업종: analysisContext.industry ?? '',
       반경: analysisContext.radius ?? undefined,
-      lat: analysisContext.center?.lat ?? undefined,
-      lng: analysisContext.center?.lng ?? undefined,
+      lat: analysisContext.confirmedPosition?.lat ?? undefined,
+      lng: analysisContext.confirmedPosition?.lng ?? undefined,
     }
   }, [
-    analysisContext.center?.lat,
-    analysisContext.center?.lng,
+    analysisContext.confirmedPosition?.lat,
+    analysisContext.confirmedPosition?.lng,
     analysisContext.industry,
     analysisContext.location,
     analysisContext.radius,
@@ -305,7 +305,7 @@ function ReportSectionBody({
   useEffect(() => {
     let cancelled = false
 
-    if (!canFetch || reportRequestToken === lastFetchedTokenRef.current) {
+    if (!canFetch || reportRequestToken <= 0 || reportRequestToken === lastFetchedTokenRef.current) {
       return
     }
 
@@ -419,6 +419,21 @@ function ReportSectionBody({
         <Card className="border-border/70 bg-white shadow-sm">
           <CardContent className="text-muted-foreground px-4 py-6 text-sm">
             리포트 탭을 열면 차트와 요약이 표시됩니다.
+          </CardContent>
+        </Card>
+      </section>
+    )
+  }
+
+  if (!report && canFetch && reportRequestToken === 0) {
+    return (
+      <section className="mt-2">
+        <Card className="border-border/70 bg-white shadow-sm">
+          <CardContent className="space-y-2 px-4 py-6 text-sm">
+            <p className="font-medium text-foreground">리포트를 아직 생성하지 않았어요. 생성할까요?</p>
+            <p className="text-muted-foreground text-sm">
+              왼쪽 에이전트에서 탐색을 마친 뒤 리포트 생성을 눌러주세요.
+            </p>
           </CardContent>
         </Card>
       </section>
@@ -887,7 +902,10 @@ function ReportSectionBody({
 
 export function ReportSection({ isActive = true }: { isActive?: boolean }) {
   const { analysisContext } = useAnalysisContext()
-  const canFetch = isValidCategory(analysisContext.industry) && Boolean(analysisContext.location)
+  const canFetch =
+    isValidCategory(analysisContext.industry) &&
+    Boolean(analysisContext.location) &&
+    Boolean(analysisContext.confirmedPosition)
 
   const queryKey = useMemo(() => {
     if (!canFetch) return 'disabled'
@@ -895,12 +913,12 @@ export function ReportSection({ isActive = true }: { isActive?: boolean }) {
       analysisContext.location ?? '',
       analysisContext.industry ?? '',
       analysisContext.radius ?? '',
-      analysisContext.center?.lat ?? '',
-      analysisContext.center?.lng ?? '',
+      analysisContext.confirmedPosition?.lat ?? '',
+      analysisContext.confirmedPosition?.lng ?? '',
     ].join('|')
   }, [
-    analysisContext.center?.lat,
-    analysisContext.center?.lng,
+    analysisContext.confirmedPosition?.lat,
+    analysisContext.confirmedPosition?.lng,
     analysisContext.industry,
     analysisContext.location,
     analysisContext.radius,

@@ -8,7 +8,6 @@ import useKakaoLoader from '@/hooks/use-kakao-loader'
 import { useCompetitorClusterer } from '@/hooks/use-competitor-clusterer'
 import { useAnalysisContext } from '@/store/analysisContext'
 import { beginMapUpdate, completeMapUpdate, useAnalysisResult } from '@/store/analysisResult'
-import { reverseGeocode } from '@/lib/geocode'
 import { CandidatePin } from './CandidatePin'
 import { CompetitorMarker } from './CompetitorMarker'
 import { MapHints } from './MapHints'
@@ -231,7 +230,7 @@ export function KakaoMap({
   isActive = true,
 }: KakaoMapProps) {
   const [sdkLoading] = useKakaoLoader()
-  const { analysisContext, setAnalysisContext } = useAnalysisContext()
+  const { analysisContext, confirmPosition, setAnalysisContext } = useAnalysisContext()
   const { mapSync, h3Resolution } = useAnalysisResult()
   const [mapInstance, setMapInstance] = useState<kakao.maps.Map | null>(null)
   const [heatmapVisible, setHeatmapVisible] = useState(true)
@@ -245,14 +244,13 @@ export function KakaoMap({
   const dragEndTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const committedCenterRef = useRef<CenterCoords>(SEOUL_CENTER)
   const dragOriginRef = useRef<CenterCoords>(SEOUL_CENTER)
-  const dragOriginContextRef = useRef<Pick<
-    AnalysisContext,
-    'center' | 'location' | 'dongCode' | 'fullLocationName'
-  > | null>(null)
+  const dragOriginContextRef = useRef<
+    Pick<AnalysisContext, 'confirmedPosition' | 'center' | 'location' | 'dongCode' | 'fullLocationName'> | null
+  >(null)
   const analysisContextRef = useRef(analysisContext)
   const renderCompleteTokenRef = useRef<number | null>(null)
   const renderCompleteFrameRef = useRef<number | null>(null)
-  const currentCenter = analysisContext.center ?? options?.center ?? userLocation ?? SEOUL_CENTER
+  const currentCenter = analysisContext.confirmedPosition ?? SEOUL_CENTER
   const selectedRadius = analysisContext.radius ?? options?.radius_m ?? DEFAULT_RADIUS_M
   const radiusTiers = useMemo(() => buildRadiusTiers(selectedRadius), [selectedRadius])
   const competitors = useMemo(() => options?.competitors ?? [], [options?.competitors])
@@ -404,7 +402,7 @@ export function KakaoMap({
   }, [mapSync.pending, mapSync.token])
 
   useEffect(() => {
-    if (dragging || pendingCenter || previewCenter) return
+    if (dragging || pendingCenter) return
 
     committedCenterRef.current = currentCenter
     syncOverlays(currentCenter)
@@ -413,7 +411,6 @@ export function KakaoMap({
     currentCenter.lng,
     dragging,
     pendingCenter,
-    previewCenter,
     syncOverlays,
     currentCenter,
   ])
@@ -457,12 +454,12 @@ export function KakaoMap({
 
       if (!mapInstance || !window.kakao?.maps) return
 
-      const center = previewCenter ?? currentCenter
+      const center = dragging || pendingCenter ? previewCenter ?? currentCenter : currentCenter
       const centerLatLng = new window.kakao.maps.LatLng(center.lat, center.lng)
       mapInstance.panTo(centerLatLng)
       mapInstance.setLevel(zoomLevel, { animate: true })
     },
-    [currentCenter, mapInstance, previewCenter, setAnalysisContext],
+    [currentCenter, dragging, mapInstance, pendingCenter, previewCenter, setAnalysisContext],
   )
 
   const handleDrag = useCallback((marker: kakao.maps.Marker) => {
@@ -504,6 +501,7 @@ export function KakaoMap({
     const origin = currentCenter
     dragOriginRef.current = origin
     dragOriginContextRef.current = {
+      confirmedPosition: analysisContextRef.current.confirmedPosition,
       center: analysisContextRef.current.center,
       location: analysisContextRef.current.location,
       dongCode: analysisContextRef.current.dongCode,
@@ -518,48 +516,25 @@ export function KakaoMap({
 
   const commitCenterChange = useCallback(
     async (center: CenterCoords) => {
-      const context = analysisContextRef.current
       const origin = dragOriginRef.current
-
-      if (!context.industry || !context.location) {
-        setAnalysisContext({ center })
-        committedCenterRef.current = center
-        setPendingCenter(null)
-        requestAnimationFrame(() => {
-          requestAnimationFrame(() => {
-            setPreviewCenter(null)
-          })
-        })
-        return
-      }
 
       try {
         beginMapUpdate('pin-move')
         setAnalysisContext({
-          center,
-          industry: null,
-          location: null,
-          dongCode: null,
-          fullLocationName: null,
+          confirmedPosition: null,
+          center: null,
         })
         committedCenterRef.current = center
         setPreviewCenter(center)
         syncOverlays(center)
         setPendingCenter(center)
 
-        const geoResult = await reverseGeocode(center.lat, center.lng)
+        const confirmed = await confirmPosition(center.lat, center.lng)
 
-        if (!geoResult) {
+        if (!confirmed) {
           throw new Error('핀 위치의 지역 정보를 확인할 수 없습니다.')
         }
 
-        setAnalysisContext({
-          center,
-          industry: null,
-          location: geoResult.dongName,
-          dongCode: geoResult.dongCode,
-          fullLocationName: geoResult.fullName,
-        })
         committedCenterRef.current = center
         setPendingCenter(null)
         requestAnimationFrame(() => {
@@ -572,7 +547,7 @@ export function KakaoMap({
         rollbackToCenter(origin)
       }
     },
-    [rollbackToCenter, setAnalysisContext, syncOverlays],
+    [confirmPosition, rollbackToCenter, setAnalysisContext, syncOverlays],
   )
 
   const handleDragEnd = useCallback(
@@ -604,7 +579,8 @@ export function KakaoMap({
     rollbackToCenter(dragOriginRef.current)
   }, [rollbackToCenter])
 
-  const visibleCenter = previewCenter ?? currentCenter
+  const visibleCenter = pendingCenter ?? (dragging ? previewCenter ?? currentCenter : currentCenter)
+  const markerCenter = pendingCenter ?? currentCenter
 
   // <Map>을 조건부로 마운트/언마운트하면 sdkLoading 전환 시점에 Kakao SDK 내부
   // 객체에 .state 접근 충돌이 발생한다. 항상 마운트 유지하고 overlay로 로딩 표시.
@@ -638,7 +614,7 @@ export function KakaoMap({
 
             {/* 후보지 핀 — 드래그 가능 */}
             <CandidatePin
-              position={visibleCenter}
+              position={markerCenter}
               draggable
               isDragging={dragging}
               onCreate={handleMarkerCreate}

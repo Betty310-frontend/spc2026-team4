@@ -1,13 +1,16 @@
 'use client'
 
-import { createContext, useContext, useEffect, useMemo, useState } from 'react'
-import { AnalysisContext } from '@/types/analysis'
+import { createContext, useContext, useEffect, useMemo, useRef, useState } from 'react'
+import { reverseGeocode } from '@/lib/geocode'
+import type { AnalysisContext, ConfirmedPosition } from '@/types/analysis'
 
 const defaultContext: AnalysisContext = {
   industry: null,
   location: null,
+  locationSource: null,
   radius: null,
   userLocation: null,
+  confirmedPosition: null,
   center: null,
   dongCode: null,
   fullLocationName: null,
@@ -15,6 +18,8 @@ const defaultContext: AnalysisContext = {
 
 interface AnalysisContextValue {
   analysisContext: AnalysisContext
+  confirmPosition: (lat: number, lng: number) => Promise<ConfirmedPosition | null>
+  getConfirmedPosition: () => ConfirmedPosition | null
   // TODO: 에이전트 onFinish 콜백에서 파싱 결과를 setAnalysisContext로 주입
   // 예: setAnalysisContext({ industry: '카페', location: '연남동', radius: 500 })
   // TODO: 조건 변경(반경·업종 수정) 시 setAnalysisContext로 부분 업데이트
@@ -24,6 +29,8 @@ interface AnalysisContextValue {
 const AnalysisCtx = createContext<AnalysisContextValue | null>(null)
 
 type AnalysisContextActions = {
+  confirmPosition: (lat: number, lng: number) => Promise<ConfirmedPosition | null>
+  getConfirmedPosition: () => ConfirmedPosition | null
   setAnalysisContext: (ctx: Partial<AnalysisContext>) => void
 }
 
@@ -35,10 +42,44 @@ export function applyAnalysisContext(partial: Partial<AnalysisContext>): void {
 
 export function AnalysisContextProvider({ children }: { children: React.ReactNode }) {
   const [ctx, setCtx] = useState<AnalysisContext>(defaultContext)
+  const confirmSeqRef = useRef(0)
+  const confirmedPositionRef = useRef<ConfirmedPosition | null>(null)
 
   const value = useMemo<AnalysisContextValue>(
     () => ({
       analysisContext: ctx,
+      getConfirmedPosition: () => confirmedPositionRef.current,
+      confirmPosition: async (lat, lng) => {
+        const sequence = ++confirmSeqRef.current
+
+        const regionResult = await reverseGeocode(lat, lng)
+        if (!regionResult) return null
+
+        // 최신 요청만 반영한다. 오래된 역지오코딩 결과가 ref/state를 덮지 못하게 막는다.
+        if (sequence !== confirmSeqRef.current) return null
+
+        const confirmedPosition: ConfirmedPosition = {
+          lat,
+          lng,
+          dongName: regionResult.dongName,
+          dongCode: regionResult.dongCode,
+        }
+        confirmedPositionRef.current = confirmedPosition
+
+        setCtx((prev) => {
+          return {
+            ...prev,
+            confirmedPosition,
+            location: regionResult.dongName,
+            locationSource: 'geolocation',
+            dongCode: regionResult.dongCode,
+            fullLocationName: regionResult.fullName,
+            center: null,
+          }
+        })
+
+        return confirmedPosition
+      },
       // TODO: 에이전트 onFinish 콜백에서 파싱 결과를 setAnalysisContext로 주입
       // 예: setAnalysisContext({ industry: '카페', location: '연남동', radius: 500 })
       // TODO: 조건 변경(반경·업종 수정) 시 setAnalysisContext로 부분 업데이트

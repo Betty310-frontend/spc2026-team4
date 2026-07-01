@@ -82,9 +82,10 @@ def make_analysis_tools(
                 'message': '분석할 위치를 알 수 없습니다. 역명이나 동네명을 알려주세요.',
             }
 
-        # 텍스트 위치가 없고 요청에 좌표가 포함된 경우 좌표를 직접 사용
-        use_lat = req_lat if (not station and _has_coords) else None
-        use_lng = req_lng if (not station and _has_coords) else None
+        # 좌표가 있으면 station 텍스트와 무관하게 좌표를 우선 사용한다.
+        # station은 표시용 라벨로만 남기고, 재지오코딩은 하지 않는다.
+        use_lat = req_lat if _has_coords else None
+        use_lng = req_lng if _has_coords else None
         effective_station = station or '현재 위치'
         try:
             async with asyncio.timeout(_TOOL_TIMEOUT):
@@ -186,7 +187,13 @@ def make_analysis_tools(
         try:
             async with asyncio.timeout(_TOOL_TIMEOUT):
                 return await run_get_population(
-                    db, redis, effective_station, category, radius
+                    db,
+                    redis,
+                    effective_station,
+                    category,
+                    radius,
+                    lat=req_lat if _has_coords else None,
+                    lng=req_lng if _has_coords else None,
                 )
         except TimeoutError:
             return {
