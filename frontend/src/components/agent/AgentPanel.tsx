@@ -11,11 +11,81 @@ import { MessageThread } from './MessageThread'
 import { QuickStartButtons } from './QuickStartButtons'
 import { ChatInput } from './ChatInput'
 import { Disclaimer } from './Disclaimer'
-import type { AgentMessage } from '@/types/message'
+import type { AgentMessage, ExplorationMessageType } from '@/types/message'
 import { INITIAL_MESSAGE } from '@/constants/messages'
-import { reverseGeocode } from '@/lib/geocode'
-import { beginMapUpdate, requestReportRefresh } from '@/store/analysisResult'
+import {
+  beginMapUpdate,
+  requestReportRefresh,
+} from '@/store/analysisResult'
 import { isValidCategory } from '@/lib/category'
+import type { ConfirmedPosition } from '@/types/analysis'
+
+const REPORT_REQUEST_KEYWORDS = [
+  '분석해줘',
+  '리포트',
+  '정리해줘',
+  '생성해줘',
+  '보고서',
+]
+
+function hasExplicitReportRequest(text: string) {
+  return REPORT_REQUEST_KEYWORDS.some((keyword) => text.includes(keyword))
+}
+
+function createExplorationState() {
+  return {
+    questionAsked: false,
+    userResponded: false,
+    radiusChanged: false,
+    reportOffered: false,
+  }
+}
+
+function inferExplorationMessageType(
+  content: string,
+): ExplorationMessageType | null {
+  const normalized = content.replace(/\s+/g, '')
+
+  if (
+    normalized.includes('리포트를생성해드릴까요') ||
+    normalized.includes('리포트를생성해드릴까요?') ||
+    normalized.includes('상세리포트를생성해드릴까요')
+  ) {
+    return 'report_offer'
+  }
+
+  if (
+    normalized.includes('반경을바꿔보고싶으신가요') ||
+    normalized.includes('반경을바꿔보고싶으신가요?') ||
+    normalized.includes('반경을바꿔보고싶나요') ||
+    normalized.includes('반경을바꿔볼까요') ||
+    normalized.includes('좁혀보고싶으신가요') ||
+    normalized.includes('넓혀보고싶으신가요')
+  ) {
+    return 'ask_radius'
+  }
+
+  if (
+    normalized.includes('특정시간대유동인구가더궁금하신가요') ||
+    normalized.includes('유동인구가더궁금하신가요') ||
+    normalized.includes('출퇴근시간대') ||
+    normalized.includes('점심시간대') ||
+    normalized.includes('저녁시간대') ||
+    normalized.includes('주말유동인구')
+  ) {
+    return 'ask_population'
+  }
+
+  if (
+    normalized.includes('지도에서직접확인') ||
+    normalized.includes('리포트로상세히볼게요') ||
+    normalized.includes('반경을바꿔볼게요')
+  ) {
+    return 'competition'
+  }
+
+  return null
+}
 
 interface AgentPanelProps {
   onOpenReportTab?: () => void
@@ -27,19 +97,31 @@ export function AgentPanel({
   onReportAnnouncementVisibleChange,
 }: AgentPanelProps) {
   const { status: geoStatus, requestLocation } = useGeolocation()
-  const { analysisContext, setAnalysisContext } = useAnalysisContext()
+  const { analysisContext, confirmPosition, setAnalysisContext } = useAnalysisContext()
   const { report } = useAnalysisResult()
 
-  // 에러 전용 로컬 메시지 (LLM 호출 없이 즉시 삽입)
   const [localMessages, setLocalMessages] = useState<AgentMessage[]>([])
+  const [explorationState, setExplorationState] = useState(() => createExplorationState())
+  const explorationStateRef = useRef(explorationState)
   const reportAnnouncementIdRef = useRef<string | null>(null)
   const reportAnnouncementPendingRef = useRef<string | null>(null)
   const reportAnnouncedRef = useRef<string | null>(null)
+  const reportOfferIdRef = useRef<string | null>(null)
   const locationChangeNoticeIdRef = useRef<string | null>(null)
   const locationChangeNoticeLocationRef = useRef<string | null>(null)
   const [hiddenIndustryPromptId, setHiddenIndustryPromptId] = useState<string | null>(null)
+  const [disabledQuickActionIds, setDisabledQuickActionIds] = useState<Set<string>>(
+    () => new Set(),
+  )
   const chatInputRef = useRef<HTMLInputElement>(null)
   const prevChatLoadingRef = useRef(false)
+  const prevRadiusRef = useRef<number | null>(analysisContext.radius)
+  const prevLocationRef = useRef<string | null>(analysisContext.location)
+  const prevIndustryRef = useRef<string | null>(analysisContext.industry)
+  const hasSeenAnalysisContextRef = useRef(false)
+  const lastAnalysisSignatureRef = useRef<string | null>(null)
+  const analysisRunInFlightRef = useRef(false)
+  const confirmedPositionRef = useRef<ConfirmedPosition | null>(analysisContext.confirmedPosition)
 
   const addAgentMessage = useCallback((msg: Omit<AgentMessage, 'id' | 'role'>) => {
     const id = `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
@@ -50,47 +132,64 @@ export function AgentPanel({
     return id
   }, [])
 
-  const handleRegenerateReport = useCallback(() => {
-    requestReportRefresh({
+  useEffect(() => {
+    explorationStateRef.current = explorationState
+  }, [explorationState])
+
+  useEffect(() => {
+    confirmedPositionRef.current = analysisContext.confirmedPosition
+  }, [analysisContext.confirmedPosition])
+
+  const clearProgrammaticMessages = useCallback(() => {
+    setLocalMessages([])
+    reportAnnouncementIdRef.current = null
+    reportAnnouncementPendingRef.current = null
+    reportAnnouncedRef.current = null
+    reportOfferIdRef.current = null
+    locationChangeNoticeIdRef.current = null
+    locationChangeNoticeLocationRef.current = null
+    onReportAnnouncementVisibleChange?.(false)
+  }, [onReportAnnouncementVisibleChange])
+
+  const resetExplorationState = useCallback(() => {
+    setExplorationState(createExplorationState())
+    explorationStateRef.current = createExplorationState()
+    setHiddenIndustryPromptId(null)
+    setDisabledQuickActionIds(new Set())
+    clearProgrammaticMessages()
+  }, [clearProgrammaticMessages])
+
+  const disableQuickActionMessage = useCallback((messageId: string) => {
+    setDisabledQuickActionIds((prev) => {
+      if (prev.has(messageId)) return prev
+      const next = new Set(prev)
+      next.add(messageId)
+      return next
+    })
+  }, [])
+
+  const makeReportRequestSnapshot = useCallback(
+    () => ({
       위치: analysisContext.location ?? '',
       업종: analysisContext.industry ?? '',
       반경: analysisContext.radius ?? undefined,
-      lat: analysisContext.center?.lat ?? undefined,
-      lng: analysisContext.center?.lng ?? undefined,
-    })
-    onOpenReportTab?.()
-    onReportAnnouncementVisibleChange?.(false)
-    if (locationChangeNoticeIdRef.current) {
-      setLocalMessages((prev) =>
-        prev.map((message) =>
-          message.id === locationChangeNoticeIdRef.current
-            ? { ...message, confirmedAction: 'regenerate_report' }
-            : message,
-        ),
-      )
-    }
-  }, [
-    analysisContext.center?.lat,
-    analysisContext.center?.lng,
-    analysisContext.industry,
-    analysisContext.location,
-    analysisContext.radius,
-    onOpenReportTab,
-    onReportAnnouncementVisibleChange,
-  ])
+      lat: analysisContext.confirmedPosition?.lat ?? undefined,
+      lng: analysisContext.confirmedPosition?.lng ?? undefined,
+    }),
+    [
+      analysisContext.confirmedPosition?.lat,
+      analysisContext.confirmedPosition?.lng,
+      analysisContext.industry,
+      analysisContext.location,
+      analysisContext.radius,
+    ],
+  )
 
-  const dismissLocationChangeNotice = useCallback(() => {
-    onReportAnnouncementVisibleChange?.(false)
-    if (locationChangeNoticeIdRef.current) {
-      setLocalMessages((prev) =>
-        prev.map((message) =>
-          message.id === locationChangeNoticeIdRef.current
-            ? { ...message, confirmedAction: 'dismiss_location_change' }
-            : message,
-        ),
-      )
-    }
-  }, [onReportAnnouncementVisibleChange])
+  const promptIndustrySelection = useCallback(() => {
+    addAgentMessage({
+      content: '어떤 업종을 생각하고 계신가요?',
+    })
+  }, [addAgentMessage])
 
   const handleChatError = useCallback(
     () => {
@@ -105,7 +204,130 @@ export function AgentPanel({
   )
 
   const { chatMessages, input, setInput, append, isLoading, agentStatus, startNewAnalysis } =
-    useAgentChat({ onChatError: handleChatError })
+    useAgentChat({
+      onChatError: handleChatError,
+      onCategoryMissing: promptIndustrySelection,
+      onAssistantFinish: ({ kind }) => {
+        if (kind === 'explore') {
+          setExplorationState((prev) => ({ ...prev, questionAsked: true }))
+          explorationStateRef.current = { ...explorationStateRef.current, questionAsked: true }
+          return
+        }
+
+        if (kind === 'reply') {
+          const state = explorationStateRef.current
+          if (state.questionAsked && state.userResponded) {
+            maybeOfferReport('dialog')
+          }
+          return
+        }
+
+        if (kind === 'report') {
+          return
+        }
+      },
+    })
+
+  const decoratedChatMessages = useMemo(
+    () =>
+      chatMessages.map((message) => {
+        if (message.role !== 'agent' || message.messageType) {
+          return message
+        }
+
+        const inferredType = inferExplorationMessageType(message.content)
+        return inferredType ? { ...message, messageType: inferredType } : message
+      }),
+    [chatMessages],
+  )
+
+  const handleGenerateReport = useCallback(
+    async (
+      kind: 'report' | 'regenerate_report' = 'report',
+      options?: { appendPrompt?: boolean },
+    ) => {
+      requestReportRefresh(makeReportRequestSnapshot())
+
+      if (kind === 'report' && reportOfferIdRef.current) {
+        disableQuickActionMessage(reportOfferIdRef.current)
+      }
+
+      if (kind === 'regenerate_report' && locationChangeNoticeIdRef.current) {
+        setLocalMessages((prev) =>
+          prev.map((message) =>
+            message.id === locationChangeNoticeIdRef.current
+              ? { ...message, confirmedAction: 'regenerate_report' }
+              : message,
+          ),
+        )
+      }
+
+      onOpenReportTab?.()
+      onReportAnnouncementVisibleChange?.(false)
+      if (options?.appendPrompt !== false) {
+        void append(
+          kind === 'report' ? '리포트를 생성해줘.' : '새 리포트를 다시 생성해줘.',
+          undefined,
+          { kind: 'report' },
+        )
+      }
+    },
+    [
+      append,
+      disableQuickActionMessage,
+      makeReportRequestSnapshot,
+      onOpenReportTab,
+      onReportAnnouncementVisibleChange,
+    ],
+  )
+
+  const handleRegenerateReport = useCallback(() => {
+    void handleGenerateReport('regenerate_report')
+  }, [handleGenerateReport])
+
+  const maybeOfferReport = useCallback(
+    (reason: 'dialog' | 'radius' | 'explicit') => {
+      const state = explorationStateRef.current
+      if (state.reportOffered && reason !== 'explicit') return
+
+      const existingOfferId = reportOfferIdRef.current
+      if (existingOfferId) {
+        disableQuickActionMessage(existingOfferId)
+        reportOfferIdRef.current = null
+      }
+
+      const id = addAgentMessage({
+        content: '지금까지 살펴본 내용을 바탕으로 상세 리포트를 생성해드릴까요?',
+        messageType: 'report_offer',
+      })
+      reportOfferIdRef.current = id
+      setExplorationState((prev) => ({ ...prev, reportOffered: true }))
+
+      if (reason === 'explicit' && state.reportOffered) {
+        void handleGenerateReport('report', { appendPrompt: false })
+      }
+    },
+    [addAgentMessage, disableQuickActionMessage, handleGenerateReport],
+  )
+
+  const dismissReportOffer = useCallback(() => {
+    if (reportOfferIdRef.current) {
+      disableQuickActionMessage(reportOfferIdRef.current)
+    }
+  }, [disableQuickActionMessage])
+
+  const dismissLocationChangeNotice = useCallback(() => {
+    onReportAnnouncementVisibleChange?.(false)
+    if (locationChangeNoticeIdRef.current) {
+      setLocalMessages((prev) =>
+        prev.map((message) =>
+          message.id === locationChangeNoticeIdRef.current
+            ? { ...message, confirmedAction: 'dismiss_location_change' }
+            : message,
+        ),
+      )
+    }
+  }, [onReportAnnouncementVisibleChange])
 
   useEffect(() => {
     const wasLoading = prevChatLoadingRef.current
@@ -122,15 +344,9 @@ export function AgentPanel({
   const { runAnalysis, isLoading: analysisLoading, retry } = useAnalysis({
     onAgentMessage: addAgentMessage,
   })
-  const prevRadiusRef = useRef<number | null>(analysisContext.radius)
-  const prevLocationRef = useRef<string | null>(analysisContext.location)
-  const prevIndustryRef = useRef<string | null>(analysisContext.industry)
-  const prevCenterRef = useRef<{ lat: number; lng: number } | null>(analysisContext.center)
-  const pendingIndustryResetRef = useRef<string | null>(null)
-  const lastAnalysisSignatureRef = useRef<string | null>(null)
-  const [analysisRunInFlight, setAnalysisRunInFlight] = useState(false)
-  const centerLat = analysisContext.center?.lat ?? null
-  const centerLng = analysisContext.center?.lng ?? null
+  const confirmedPosition = analysisContext.confirmedPosition
+  const centerLat = confirmedPosition?.lat ?? null
+  const centerLng = confirmedPosition?.lng ?? null
 
   const analysisSignature = useMemo(() => {
     const industry = analysisContext.industry ?? ''
@@ -149,10 +365,11 @@ export function AgentPanel({
     const industry = analysisContext.industry
     const location = analysisContext.location
     if (!isValidCategory(industry) || !location) return
-    if (analysisRunInFlight) return
+    if (analysisRunInFlightRef.current) return
     if (lastAnalysisSignatureRef.current === analysisSignature) return
+    if (!confirmedPosition) return
 
-    setAnalysisRunInFlight(true)
+    analysisRunInFlightRef.current = true
     lastAnalysisSignatureRef.current = analysisSignature
     void (async () => {
       try {
@@ -162,10 +379,10 @@ export function AgentPanel({
           반경: analysisContext.radius ?? undefined,
           lat: centerLat ?? undefined,
           lng: centerLng ?? undefined,
-          행정동코드: analysisContext.dongCode ?? undefined,
+          행정동코드: confirmedPosition.dongCode,
         })
       } finally {
-        setAnalysisRunInFlight(false)
+        analysisRunInFlightRef.current = false
       }
     })()
   }, [
@@ -173,73 +390,56 @@ export function AgentPanel({
     analysisContext.industry,
     analysisContext.location,
     analysisContext.radius,
-    analysisContext.dongCode,
+    confirmedPosition,
     centerLat,
     centerLng,
-    analysisRunInFlight,
     runAnalysis,
   ])
 
   useEffect(() => {
-    const prevLocation = prevLocationRef.current
     const nextLocation = analysisContext.location
-    const prevIndustry = prevIndustryRef.current
     const nextIndustry = analysisContext.industry
+    const nextRadius = analysisContext.radius
+    const hasContext = Boolean(nextLocation && isValidCategory(nextIndustry))
 
-    if (prevLocation && nextLocation == null && prevIndustry) {
-      pendingIndustryResetRef.current = prevLocation
+    if (!hasContext) {
+      prevLocationRef.current = nextLocation
+      prevIndustryRef.current = nextIndustry
+      prevRadiusRef.current = nextRadius
+      return
     }
 
-    if (
-      nextLocation &&
-      pendingIndustryResetRef.current &&
-      pendingIndustryResetRef.current !== nextLocation &&
-      locationChangeNoticeLocationRef.current !== nextLocation
-    ) {
-      const noticeId = addAgentMessage({
-        content: `위치가 ${nextLocation}으로 변경되었어요. 새 위치 기준으로 리포트를 다시 받아보시겠어요?`,
-        confirmButtons: [
-          { label: '새 리포트 받기', variant: 'primary', action: 'regenerate_report' },
-          { label: '나중에 할게요', variant: 'outline', action: 'dismiss_location_change' },
-        ],
-      })
-      locationChangeNoticeIdRef.current = noticeId
-      locationChangeNoticeLocationRef.current = nextLocation
-      pendingIndustryResetRef.current = null
-      onReportAnnouncementVisibleChange?.(true)
-
-      addAgentMessage({
-        content: '어떤 업종을 생각하고 계신가요?',
-      })
+    if (!hasSeenAnalysisContextRef.current) {
+      hasSeenAnalysisContextRef.current = true
+      prevLocationRef.current = nextLocation
+      prevIndustryRef.current = nextIndustry
+      prevRadiusRef.current = nextRadius
+      return
     }
 
-    if (
-      nextLocation &&
-      nextIndustry != null &&
-      locationChangeNoticeLocationRef.current === nextLocation
-    ) {
-      pendingIndustryResetRef.current = null
+    const locationChanged = prevLocationRef.current !== nextLocation
+    const industryChanged = prevIndustryRef.current !== nextIndustry
+    const radiusChanged = prevRadiusRef.current !== nextRadius && nextRadius != null
+
+    if (locationChanged || industryChanged) {
+      resetExplorationState()
+    } else if (radiusChanged) {
+      setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
+      explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
+      beginMapUpdate('radius-change')
+      maybeOfferReport('radius')
     }
 
     prevLocationRef.current = nextLocation
     prevIndustryRef.current = nextIndustry
-    prevCenterRef.current = analysisContext.center
-  }, [analysisContext.center, analysisContext.industry, analysisContext.location, addAgentMessage, onReportAnnouncementVisibleChange])
-
-  useEffect(() => {
-    const prevRadius = prevRadiusRef.current
-    const nextRadius = analysisContext.radius
-
-    if (
-      prevRadius != null &&
-      nextRadius != null &&
-      prevRadius !== nextRadius
-    ) {
-      beginMapUpdate('radius-change')
-    }
-
     prevRadiusRef.current = nextRadius
-  }, [analysisContext.radius])
+  }, [
+    analysisContext.industry,
+    analysisContext.location,
+    analysisContext.radius,
+    maybeOfferReport,
+    resetExplorationState,
+  ])
 
   useEffect(() => {
     const generatedAt = report?.meta.generated_at ?? null
@@ -281,29 +481,161 @@ export function AgentPanel({
   const [showQuickStart, setShowQuickStart] = useState(false)
 
   const handleSend = () => {
-    if (!input.trim() || isLoading) return
+    const trimmed = input.trim()
+    if (!trimmed || isLoading) return
+
+    const explicitReportRequest = hasExplicitReportRequest(trimmed)
+    if (explorationStateRef.current.questionAsked) {
+      setExplorationState((prev) => ({ ...prev, userResponded: true }))
+      explorationStateRef.current = { ...explorationStateRef.current, userResponded: true }
+    }
+
     setShowQuickStart(false)
     setLocalMessages([])
-    void append(input)
+    void append(trimmed, undefined, { kind: explicitReportRequest ? 'report' : 'reply' })
+
+    if (explicitReportRequest) {
+      if (explorationStateRef.current.reportOffered) {
+        void handleGenerateReport('report', { appendPrompt: false })
+      } else {
+        maybeOfferReport('explicit')
+      }
+    }
   }
 
-  const handleQuickStart = (text: string) => {
+  const handleQuickStart = (location: string, category: string) => {
     setShowQuickStart(false)
-    setLocalMessages([])
+    resetExplorationState()
     setHiddenIndustryPromptId(null)
     startNewAnalysis()
     setInitMessage({ ...INITIAL_MESSAGE, isError: false })
-    void append(text)
+
+    const quickStartRadius = analysisContext.radius ?? 500
+    const radiusText = `반경 ${quickStartRadius}m 내`
+    const quickStartText = `${location}에서 ${category} 창업을 준비 중이에요. ${radiusText} 상권을 분석해주세요.`
+
+    void append(
+      quickStartText,
+      {
+        location,
+        industry: category,
+        radius: quickStartRadius,
+      },
+      { kind: 'explore', category },
+    )
   }
 
   const handleIndustryQuickSelect = useCallback(
     (text: string, messageId: string) => {
+      const position = confirmedPositionRef.current
+      if (!position) {
+        console.warn('[chat] 위치 미확정 상태에서 업종 선택됨')
+        return
+      }
+
+      setExplorationState((prev) => ({ ...prev, userResponded: true }))
+      explorationStateRef.current = { ...explorationStateRef.current, userResponded: true }
       setHiddenIndustryPromptId(messageId)
       setShowQuickStart(false)
       setLocalMessages([])
-      void append(text)
+      void append(
+        text,
+        {
+          confirmedPosition: position,
+          location: position.dongName,
+          dongCode: position.dongCode,
+        },
+        { kind: 'reply', category: text },
+      )
     },
     [append],
+  )
+
+  const handleExplorationQuickSelect = useCallback(
+    (
+      messageId: string,
+      type: ExplorationMessageType,
+      value: string | number,
+    ) => {
+      disableQuickActionMessage(messageId)
+      setShowQuickStart(false)
+
+      const markResponded = () => {
+        setExplorationState((prev) => ({ ...prev, userResponded: true }))
+        explorationStateRef.current = { ...explorationStateRef.current, userResponded: true }
+      }
+
+      if (type === 'ask_radius') {
+        const nextRadius = typeof value === 'number' ? value : Number(value)
+        if (!Number.isFinite(nextRadius)) return
+
+        markResponded()
+        setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
+        explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
+        setAnalysisContext({ radius: nextRadius })
+        void append(`${nextRadius}m로 반경을 바꿔볼게요.`, undefined, { kind: 'reply' })
+        return
+      }
+
+      if (type === 'ask_population') {
+        const labelMap: Record<string, string> = {
+          commute: '출퇴근 시간대',
+          lunch: '점심 시간대',
+          evening: '저녁 시간대',
+          weekend: '주말',
+        }
+        const slot = labelMap[String(value)]
+        if (!slot) return
+
+        markResponded()
+        void append(`${slot} 유동인구가 궁금해요.`, undefined, { kind: 'reply' })
+        return
+      }
+
+      if (type === 'competition') {
+        markResponded()
+
+        if (value === 'report') {
+          maybeOfferReport('explicit')
+          return
+        }
+
+        if (value === 'radius') {
+          setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
+          explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
+          void append('반경을 바꿔볼게요.', undefined, { kind: 'reply' })
+          maybeOfferReport('radius')
+          return
+        }
+
+        if (value === 'map') {
+          void append('지도에서 직접 확인할게요.', undefined, { kind: 'reply' })
+          return
+        }
+      }
+
+      if (type === 'report_offer') {
+        if (value === 'generate') {
+          void handleGenerateReport('report')
+          return
+        }
+
+        if (value === 'explore_more') {
+          markResponded()
+          setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
+          explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
+          void append('반경을 더 바꿔볼게요.', undefined, { kind: 'reply' })
+          maybeOfferReport('radius')
+          return
+        }
+
+        if (value === 'dismiss') {
+          markResponded()
+          disableQuickActionMessage(messageId)
+        }
+      }
+    },
+    [append, disableQuickActionMessage, handleGenerateReport, maybeOfferReport, setAnalysisContext],
   )
 
   const handleConfirmAction = useCallback(
@@ -321,6 +653,14 @@ export function AgentPanel({
           }
           onOpenReportTab?.()
           onReportAnnouncementVisibleChange?.(false)
+          break
+
+        case 'generate_report':
+          void handleGenerateReport('report')
+          break
+
+        case 'dismiss_report_offer':
+          dismissReportOffer()
           break
 
         case 'regenerate_report':
@@ -358,28 +698,53 @@ export function AgentPanel({
           if (pos) {
             setAnalysisContext({
               userLocation: pos,
-              center: pos,
-              location: null,
-              dongCode: null,
-              fullLocationName: null,
+              confirmedPosition: null,
+              center: null,
             })
 
-            // SDK Geocoder로 역지오코딩 — 행정동명·코드 획득
-            const geoResult = await reverseGeocode(pos.lat, pos.lng)
+            const confirmed = await confirmPosition(pos.lat, pos.lng)
 
-            if (geoResult) {
+            if (confirmed) {
+              confirmedPositionRef.current = confirmed
               setAnalysisContext({
                 userLocation: pos,
-                center: pos,
-                location: geoResult.dongName,
-                dongCode: geoResult.dongCode,
-                fullLocationName: geoResult.fullName,
+                confirmedPosition: confirmed,
+                location: confirmed.dongName,
+                dongCode: confirmed.dongCode,
               })
-              void append(`현재 위치(${geoResult.fullName})에서 창업을 준비 중이에요.`)
+              void append(
+                `현재 위치(${confirmed.dongName})에서 창업을 준비 중이에요.`,
+                {
+                  location: confirmed.dongName,
+                  confirmedPosition: confirmed,
+                  dongCode: confirmed.dongCode,
+                },
+                { kind: 'explore' },
+              )
             } else {
               // 역지오코딩 실패 → 좌표 텍스트 fallback
+              const fallbackPosition: ConfirmedPosition = {
+                lat: pos.lat,
+                lng: pos.lng,
+                dongName: '현재 위치',
+                dongCode: '',
+              }
+              confirmedPositionRef.current = fallbackPosition
+              setAnalysisContext({
+                userLocation: pos,
+                confirmedPosition: fallbackPosition,
+                location: fallbackPosition.dongName,
+                dongCode: fallbackPosition.dongCode,
+              })
               void append(
                 `현재 위치(좌표: ${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)})에서 창업을 준비 중이에요.`,
+                {
+                  userLocation: pos,
+                  confirmedPosition: fallbackPosition,
+                  location: fallbackPosition.dongName,
+                  dongCode: fallbackPosition.dongCode,
+                },
+                { kind: 'explore' },
               )
             }
           } else {
@@ -393,7 +758,9 @@ export function AgentPanel({
 
         case 'input_manually':
           setInitMessage((prev) => ({ ...prev, confirmedAction: action }))
+          resetExplorationState()
           setAnalysisContext({
+            confirmedPosition: null,
             center: null,
             userLocation: null,
             location: null,
@@ -427,18 +794,22 @@ export function AgentPanel({
       retry,
       append,
       requestLocation,
+      confirmPosition,
       setAnalysisContext,
       onOpenReportTab,
       onReportAnnouncementVisibleChange,
+      handleGenerateReport,
+      dismissReportOffer,
       handleRegenerateReport,
       dismissLocationChangeNotice,
+      resetExplorationState,
     ],
   )
 
   // SDK 메시지 + 로컬 에러 메시지 병합
   const allMessages = useMemo(
-    () => [initMessage, ...chatMessages, ...localMessages],
-    [initMessage, chatMessages, localMessages],
+    () => [initMessage, ...decoratedChatMessages, ...localMessages],
+    [decoratedChatMessages, initMessage, localMessages],
   )
 
   return (
@@ -449,6 +820,8 @@ export function AgentPanel({
           messages={allMessages}
           onConfirmAction={handleConfirmAction}
           onIndustryQuickSelect={handleIndustryQuickSelect}
+          onExplorationQuickSelect={handleExplorationQuickSelect}
+          disabledQuickActionIds={disabledQuickActionIds}
           hiddenIndustryPromptId={hiddenIndustryPromptId}
           isStreaming={isLoading}
           disableConfirm={geoStatus === 'loading'}

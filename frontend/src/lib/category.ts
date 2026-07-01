@@ -67,3 +67,20 @@ export function normalizeCategory(value: string | null | undefined): string | nu
   const trimmed = value.trim()
   return CATEGORY_ALIASES[trimmed] ?? trimmed
 }
+
+const CATEGORY_PATTERNS = Array.from(
+  new Set([...Object.keys(CATEGORY_ALIASES), ...Object.values(CATEGORY_ALIASES)]),
+).sort((a, b) => b.length - a.length)
+
+export function extractCategoryFromText(text: string): string | null {
+  const normalizedText = text.replace(/\s+/g, ' ').trim()
+  if (!normalizedText) return null
+
+  for (const pattern of CATEGORY_PATTERNS) {
+    if (normalizedText.includes(pattern)) {
+      return normalizeCategory(pattern)
+    }
+  }
+
+  return null
+}
