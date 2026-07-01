@@ -23,6 +23,17 @@ import {
   normalizeCompetitors,
   type CompetitorsApiResponse,
 } from '@/lib/agent-event-bridge'
+import chatRefreshGuardModule from '@/lib/chatRefreshGuard'
+
+const { ANALYSIS_TOOL_NAMES, createChatRefreshGuard } = chatRefreshGuardModule as {
+  ANALYSIS_TOOL_NAMES: readonly string[]
+  createChatRefreshGuard: () => {
+    markRagSources: () => void
+    markAnalysisTool: () => void
+    shouldRefreshReport: (hasAnalysisToolResult: boolean) => boolean
+    reset: () => void
+  }
+}
 
 interface UseAgentChatOptions {
   onChatError?: (error: Error) => void
@@ -36,6 +47,7 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
   const analysisContextRef = useRef(analysisContext)
   const appliedCompetitorMessagesRef = useRef<Set<string>>(new Set())
   const processedToolCallIdsRef = useRef<Set<string>>(new Set())
+  const refreshGuardRef = useRef(createChatRefreshGuard())
 
   // useChat options은 mount 시점에 클로저로 고정되므로 ref로 최신 콜백 유지
   const onChatErrorRef = useRef(onChatError)
@@ -60,16 +72,36 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
       const dataPartAny = dataPart as { type?: string; data?: unknown }
 
       if (typeof dataPartAny.type === 'string' && dataPartAny.type.startsWith('data-')) {
+        if (dataPartAny.type === 'data-sources') {
+          refreshGuardRef.current.markRagSources()
+          return
+        }
+
         if (dataPartAny.type === 'data-search_competitors' && dataPartAny.data) {
+          refreshGuardRef.current.markAnalysisTool()
           if (isRecord(dataPartAny.data)) {
             applyCompetitors(normalizeCompetitors(dataPartAny.data as CompetitorsApiResponse))
           }
-        } else if (
+          return
+        }
+
+        if (
+          dataPartAny.type === 'data-tool-end' &&
+          isRecord(dataPartAny.data) &&
+          typeof dataPartAny.data.tool === 'string' &&
+          ANALYSIS_TOOL_NAMES.includes(dataPartAny.data.tool as (typeof ANALYSIS_TOOL_NAMES)[number])
+        ) {
+          refreshGuardRef.current.markAnalysisTool()
+          return
+        }
+
+        if (
           dataPartAny.type === 'data-tool-start' &&
           isRecord(dataPartAny.data) &&
           dataPartAny.data.tool === 'search_competitors' &&
           isRecord(dataPartAny.data.input)
         ) {
+          refreshGuardRef.current.markAnalysisTool()
           setAnalysisContext({
             center: null,
             dongCode: null,
@@ -92,14 +124,16 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
               ...parsedContext,
             }
           }
-        } else if (
-          dataPartAny.type === 'data-map' &&
-          isRecord(dataPartAny.data)
-        ) {
+          return
+        }
+
+        if (dataPartAny.type === 'data-map' && isRecord(dataPartAny.data)) {
           const center = isRecord(dataPartAny.data.center)
             ? {
-                lat: typeof dataPartAny.data.center.lat === 'number' ? dataPartAny.data.center.lat : null,
-                lng: typeof dataPartAny.data.center.lng === 'number' ? dataPartAny.data.center.lng : null,
+                lat:
+                  typeof dataPartAny.data.center.lat === 'number' ? dataPartAny.data.center.lat : null,
+                lng:
+                  typeof dataPartAny.data.center.lng === 'number' ? dataPartAny.data.center.lng : null,
               }
             : null
 
@@ -122,25 +156,59 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
                 : {}),
             }
           }
+          return
         }
-        return
-      }
 
-      if (typeof dataPartAny.data === 'string') {
-        const evt = parseAgentEventLine(dataPartAny.data)
-        if (evt) applyAgentEventToStore(evt)
-      } else if (isRecord(dataPartAny.data) && typeof dataPartAny.type === 'string') {
-        const evt = {
-          event: dataPartAny.type.replace(/^data-/, ''),
-          ...dataPartAny.data,
+        if (typeof dataPartAny.data === 'string') {
+          const evt = parseAgentEventLine(dataPartAny.data)
+          if (evt) {
+            if (
+              evt.event === 'tool' &&
+              typeof evt.name === 'string' &&
+              ANALYSIS_TOOL_NAMES.includes(evt.name as (typeof ANALYSIS_TOOL_NAMES)[number])
+            ) {
+              refreshGuardRef.current.markAnalysisTool()
+            }
+            applyAgentEventToStore(evt)
+          }
+          return
         }
-        if (isRecord(evt) && typeof evt.event === 'string') {
-          applyAgentEventToStore(evt as { event: 'tool' | 'status' | 'delta' })
+
+        if (isRecord(dataPartAny.data)) {
+          const evt = {
+            event: dataPartAny.type.replace(/^data-/, ''),
+            ...dataPartAny.data,
+          }
+          if (isRecord(evt) && typeof evt.event === 'string') {
+            const evtRecord = evt as Record<string, unknown>
+            if (
+              evt.event === 'tool' &&
+              typeof evtRecord.name === 'string' &&
+              ANALYSIS_TOOL_NAMES.includes(
+                evtRecord.name as (typeof ANALYSIS_TOOL_NAMES)[number],
+              )
+            ) {
+              refreshGuardRef.current.markAnalysisTool()
+            }
+            applyAgentEventToStore(evt as { event: 'tool' | 'status' | 'delta' })
+          }
         }
       }
     },
 
     onFinish({ message }: { message: UIMessage }) {
+      const hasAnalysisToolResult = message.parts.some(
+        (part) =>
+          part.type === 'dynamic-tool' ||
+          part.type === 'tool-search_competitors' ||
+          part.type === 'tool-get_population_flow' ||
+          part.type === 'tool-calc_competition_percentile' ||
+          part.type === 'tool-get_positioning_data',
+      )
+      const shouldRefreshReport = refreshGuardRef.current.shouldRefreshReport(
+        hasAnalysisToolResult,
+      )
+
       // tool result → 지표 카드 업데이트 + context 파싱
       for (const part of message.parts) {
         if (
@@ -201,17 +269,22 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
           ...assistantContext,
         }
       }
-      requestReportRefresh({
-        위치: analysisContextRef.current.location ?? '',
-        업종: analysisContextRef.current.industry ?? '',
-        반경: analysisContextRef.current.radius ?? undefined,
-        lat: analysisContextRef.current.center?.lat ?? undefined,
-        lng: analysisContextRef.current.center?.lng ?? undefined,
-      })
+      if (shouldRefreshReport) {
+        requestReportRefresh({
+          위치: analysisContextRef.current.location ?? '',
+          업종: analysisContextRef.current.industry ?? '',
+          반경: analysisContextRef.current.radius ?? undefined,
+          lat: analysisContextRef.current.center?.lat ?? undefined,
+          lng: analysisContextRef.current.center?.lng ?? undefined,
+        })
+      }
+
+      refreshGuardRef.current.reset()
     },
 
     onError(error: Error) {
       abortMapUpdate()
+      refreshGuardRef.current.reset()
       console.error('[agent:error]', error)
       onChatErrorRef.current?.(error)
     },
@@ -244,6 +317,7 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
 
   const append = (text: string) => {
     setInput('')
+    refreshGuardRef.current.reset()
     const parsedRadius = extractRadiusFromText(text)
     const nextRadius = parsedRadius ?? analysisContextRef.current.radius ?? 500
 
@@ -279,6 +353,7 @@ export function useAgentChat({ onChatError }: UseAgentChatOptions = {}) {
       abortMapUpdate()
       appliedCompetitorMessagesRef.current.clear()
       processedToolCallIdsRef.current.clear()
+      refreshGuardRef.current.reset()
       reset()
       stopLoading('chat')
     },
