@@ -1,13 +1,7 @@
 'use client'
 
 import { Button } from '@/components/ui/button'
-
-export type QuickReplyType =
-  | 'operation'
-  | 'breakeven'
-  | 'differentiation'
-  | 'radius'
-  | 'report_offer'
+import type { QuickReplyType } from '@/lib/quickReply'
 
 export type QuickReplyAction = 'generate_report' | 'dismiss'
 

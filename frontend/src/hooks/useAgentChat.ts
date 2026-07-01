@@ -50,6 +50,7 @@ interface UseAgentChatOptions {
 interface AppendOptions {
   kind?: 'explore' | 'reply' | 'report'
   category?: string
+  source?: 'user_input' | 'quickstart' | 'geolocation' | 'assistant' | 'system'
 }
 
 export function useAgentChat(options: UseAgentChatOptions = {}) {
@@ -348,6 +349,7 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
   ) => {
     refreshGuardRef.current.reset()
     pendingAppendKindRef.current = options?.kind ?? 'reply'
+    const source = options?.source ?? 'user_input'
     const forcedCategory = options?.category?.trim() || null
     const baseContext = contextOverride
       ? { ...analysisContextRef.current, ...contextOverride }
@@ -367,7 +369,10 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
     pendingMapCenterRef.current = null
     skipDataMapConfirmRef.current = false
 
-    if (locationCandidate) {
+    const canResolveLocation =
+      source === 'user_input' || source === 'quickstart' || source === 'geolocation'
+
+    if (locationCandidate && canResolveLocation) {
       const locationResult = await resolveLocationToCenter(locationCandidate)
       if (!locationResult) {
         console.warn('[chat] 호출 차단: 위치 키워드를 찾지 못함', { text, locationCandidate })
@@ -388,8 +393,17 @@ export function useAgentChat(options: UseAgentChatOptions = {}) {
         ...analysisContextRef.current,
         confirmedPosition: confirmed,
         location: confirmed.dongName,
+        locationSource: source,
         dongCode: confirmed.dongCode,
       }
+      setAnalysisContext({
+        confirmedPosition: confirmed,
+        location: confirmed.dongName,
+        locationSource: source,
+        dongCode: confirmed.dongCode,
+      })
+    } else if (locationCandidate && !canResolveLocation) {
+      console.warn('[geocode] 차단: 허용되지 않은 출처', { source, text, locationCandidate })
     }
 
     if (!confirmedPosition) {

@@ -4,7 +4,8 @@ import { AgentMessage, UserMessage } from '@/types/message'
 import { AgentMarkdown } from './AgentMarkdown'
 import { IndustryQuickButtons } from './IndustryQuickButtons'
 import { ExplorationQuickButtons } from './ExplorationQuickButtons'
-import { QuickReplyButtons, type QuickReplyType } from './QuickReplyButtons'
+import { QuickReplyButtons } from './QuickReplyButtons'
+import { detectQuickReplyType, type QuickReplyType } from '@/lib/quickReply'
 import { ChevronRight } from 'lucide-react'
 
 interface MessageBubbleProps {
@@ -25,6 +26,8 @@ interface MessageBubbleProps {
     type: QuickReplyType,
     option: { label: string; text: string; action?: 'generate_report' | 'dismiss' },
   ) => void
+  usedQuickReplyTypes?: Set<QuickReplyType>
+  isLastAssistantMessage?: boolean
   hiddenIndustryPromptId?: string | null
 }
 
@@ -35,56 +38,6 @@ function isIndustryQuestion(content: string) {
     normalized.includes('어떤업종을생각하고계신가요?') ||
     normalized.includes('업종을생각하고계신가요')
   )
-}
-
-function normalizePromptText(content: string) {
-  return content.replace(/\s+/g, '').replace(/[?？,，.。!！:：]/g, '')
-}
-
-function detectQuickReplyType(content: string): QuickReplyType | null {
-  const normalized = normalizePromptText(content)
-
-  if (
-    /직접운영(예정)?(인가요|할예정인가요|하실예정인가요)?/.test(normalized) ||
-    /직접운영예정/.test(normalized) ||
-    /직원(을)?(고용|채용)(계획|예정|도생각|도고려)/.test(normalized) ||
-    /직원고용계획/.test(normalized) ||
-    /직원고용도생각/.test(normalized) ||
-    /고용계획(이|은)?있나요/.test(normalized) ||
-    /운영방식(은|이)?/.test(normalized)
-  ) {
-    return 'operation'
-  }
-
-  if (
-    /손익분기점달성목표기간/.test(normalized) ||
-    /손익분기점/.test(normalized) ||
-    /손익분기/.test(normalized) ||
-    /몇개월/.test(normalized) ||
-    /목표기간/.test(normalized)
-  ) {
-    return 'breakeven'
-  }
-
-  if (/차별화/.test(normalized) || /차별점/.test(normalized)) {
-    return 'differentiation'
-  }
-
-  if (
-    /반경/.test(normalized) &&
-    /(바꿔|조정|늘려|줄여|유지|넓혀|좁혀)/.test(normalized)
-  ) {
-    return 'radius'
-  }
-
-  if (
-    /리포트/.test(normalized) &&
-    /(생성|받아|만들|원하시)/.test(normalized)
-  ) {
-    return 'report_offer'
-  }
-
-  return null
 }
 
 export function MessageBubble({
@@ -98,6 +51,8 @@ export function MessageBubble({
   onExplorationQuickSelect,
   onQuickReplySelect,
   hiddenIndustryPromptId,
+  usedQuickReplyTypes,
+  isLastAssistantMessage = false,
 }: MessageBubbleProps) {
   if (message.role === 'user') {
     return (
@@ -135,6 +90,8 @@ export function MessageBubble({
   const showQuickReplies =
     quickReplyType != null &&
     onQuickReplySelect != null &&
+    isLastAssistantMessage &&
+    !(usedQuickReplyTypes?.has(quickReplyType) === true) &&
     (disabledQuickActionIds?.has(message.id) !== true)
 
   return (

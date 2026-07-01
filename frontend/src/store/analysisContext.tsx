@@ -7,6 +7,7 @@ import type { AnalysisContext, ConfirmedPosition } from '@/types/analysis'
 const defaultContext: AnalysisContext = {
   industry: null,
   location: null,
+  locationSource: null,
   radius: null,
   userLocation: null,
   confirmedPosition: null,
@@ -70,6 +71,7 @@ export function AnalysisContextProvider({ children }: { children: React.ReactNod
             ...prev,
             confirmedPosition,
             location: regionResult.dongName,
+            locationSource: 'geolocation',
             dongCode: regionResult.dongCode,
             fullLocationName: regionResult.fullName,
             center: null,

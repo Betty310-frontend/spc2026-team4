@@ -25,6 +25,7 @@ export interface AnalysisParams {
   lat?: number
   lng?: number
   행정동코드?: string
+  locationSource?: 'user_input' | 'quickstart' | 'geolocation' | null
 }
 
 function getH3Resolution(radiusM: number): 8 | 9 | 10 {
@@ -90,6 +91,14 @@ export function useAnalysis(options: UseAnalysisOptions = {}) {
           | null = null
 
         if (!resolvedCenter) {
+          if (
+            params.locationSource !== 'user_input' &&
+            params.locationSource !== 'quickstart' &&
+            params.locationSource !== 'geolocation'
+          ) {
+            throw new ApiError(400, '허용되지 않은 위치 출처입니다.')
+          }
+
           const locationResult = await resolveLocationToCenter(params.위치)
           if (!locationResult) {
             throw new ApiError(400, '위치 좌표를 찾지 못했습니다.')

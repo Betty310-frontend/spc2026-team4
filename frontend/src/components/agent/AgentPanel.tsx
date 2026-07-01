@@ -12,7 +12,7 @@ import { MessageThread } from './MessageThread'
 import { QuickStartButtons } from './QuickStartButtons'
 import { ChatInput } from './ChatInput'
 import { Disclaimer } from './Disclaimer'
-import type { QuickReplyType } from './QuickReplyButtons'
+import { detectQuickReplyType, type QuickReplyType } from '@/lib/quickReply'
 import type {
   AgentMessage,
   ChatMessage,
@@ -116,6 +116,9 @@ export function AgentPanel({
   const locationChangeNoticeIdRef = useRef<string | null>(null)
   const locationChangeNoticeLocationRef = useRef<string | null>(null)
   const [hiddenIndustryPromptId, setHiddenIndustryPromptId] = useState<string | null>(null)
+  const [usedQuickReplyTypes, setUsedQuickReplyTypes] = useState<Set<QuickReplyType>>(
+    () => new Set(),
+  )
   const [disabledQuickActionIds, setDisabledQuickActionIds] = useState<Set<string>>(
     () => new Set(),
   )
@@ -173,6 +176,7 @@ export function AgentPanel({
     setExplorationState(createExplorationState())
     explorationStateRef.current = createExplorationState()
     setHiddenIndustryPromptId(null)
+    setUsedQuickReplyTypes(new Set())
     setDisabledQuickActionIds(new Set())
     clearProgrammaticMessages()
   }, [clearProgrammaticMessages])
@@ -208,6 +212,15 @@ export function AgentPanel({
       content: '어떤 업종을 생각하고 계신가요?',
     })
   }, [addAgentMessage])
+
+  const markQuickReplyTypeUsed = useCallback((type: QuickReplyType) => {
+    setUsedQuickReplyTypes((prev) => {
+      if (prev.has(type)) return prev
+      const next = new Set(prev)
+      next.add(type)
+      return next
+    })
+  }, [])
 
   const handleChatError = useCallback(
     () => {
@@ -324,7 +337,7 @@ export function AgentPanel({
         void append(
           kind === 'report' ? '리포트를 생성해줘.' : '새 리포트를 다시 생성해줘.',
           undefined,
-          { kind: 'report' },
+          { kind: 'report', source: 'user_input' },
         )
       }
     },
@@ -436,6 +449,7 @@ export function AgentPanel({
           lat: centerLat ?? undefined,
           lng: centerLng ?? undefined,
           행정동코드: confirmedPosition.dongCode,
+          locationSource: analysisContext.locationSource,
         })
       } finally {
         analysisRunInFlightRef.current = false
@@ -446,6 +460,7 @@ export function AgentPanel({
     analysisContext.industry,
     analysisContext.location,
     analysisContext.radius,
+    analysisContext.locationSource,
     confirmedPosition,
     centerLat,
     centerLng,
@@ -492,6 +507,7 @@ export function AgentPanel({
     analysisContext.industry,
     analysisContext.location,
     analysisContext.radius,
+    analysisContext.locationSource,
     maybeOfferReport,
     resetExplorationState,
   ])
@@ -547,6 +563,15 @@ export function AgentPanel({
     if (!trimmed || isLoading) return
 
     const explicitReportRequest = hasExplicitReportRequest(trimmed)
+    const latestAssistantMessage = [initMessage, ...decoratedChatMessages, ...localMessages]
+      .filter((message): message is AgentMessage => message.role === 'agent')
+      .at(-1)
+    const latestQuestionType = latestAssistantMessage
+      ? detectQuickReplyType(latestAssistantMessage.content)
+      : null
+    if (latestQuestionType) {
+      markQuickReplyTypeUsed(latestQuestionType)
+    }
     if (explorationStateRef.current.questionAsked) {
       setExplorationState((prev) => ({ ...prev, userResponded: true }))
       explorationStateRef.current = { ...explorationStateRef.current, userResponded: true }
@@ -554,7 +579,10 @@ export function AgentPanel({
 
     setShowQuickStart(false)
     setLocalMessages([])
-    void append(trimmed, undefined, { kind: explicitReportRequest ? 'report' : 'reply' })
+      void append(trimmed, undefined, {
+        kind: explicitReportRequest ? 'report' : 'reply',
+        source: 'user_input',
+      })
 
     if (explicitReportRequest) {
       if (explorationStateRef.current.reportOffered) {
@@ -583,7 +611,7 @@ export function AgentPanel({
         industry: category,
         radius: quickStartRadius,
       },
-      { kind: 'explore', category },
+      { kind: 'explore', category, source: 'quickstart' },
     )
   }
 
@@ -604,7 +632,7 @@ export function AgentPanel({
           location: position.dongName,
           dongCode: position.dongCode,
         },
-        { kind: 'reply', category: text },
+        { kind: 'reply', category: text, source: 'user_input' },
       )
     },
     [append],
@@ -621,6 +649,7 @@ export function AgentPanel({
 
       setExplorationState((prev) => ({ ...prev, userResponded: true }))
       explorationStateRef.current = { ...explorationStateRef.current, userResponded: true }
+      markQuickReplyTypeUsed(type)
 
       if (option.action === 'generate_report') {
         void handleGenerateReport('report')
@@ -636,9 +665,9 @@ export function AgentPanel({
         explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
       }
 
-      void append(option.text, undefined, { kind: 'reply' })
+      void append(option.text, undefined, { kind: 'reply', source: 'user_input' })
     },
-    [append, disableQuickActionMessage, handleGenerateReport],
+    [append, disableQuickActionMessage, handleGenerateReport, markQuickReplyTypeUsed],
   )
 
   const handleExplorationQuickSelect = useCallback(
@@ -663,7 +692,10 @@ export function AgentPanel({
         setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
         explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
         setAnalysisContext({ radius: nextRadius })
-        void append(`${nextRadius}m로 반경을 바꿔볼게요.`, undefined, { kind: 'reply' })
+        void append(`${nextRadius}m로 반경을 바꿔볼게요.`, undefined, {
+          kind: 'reply',
+          source: 'user_input',
+        })
         return
       }
 
@@ -678,7 +710,10 @@ export function AgentPanel({
         if (!slot) return
 
         markResponded()
-        void append(`${slot} 유동인구가 궁금해요.`, undefined, { kind: 'reply' })
+        void append(`${slot} 유동인구가 궁금해요.`, undefined, {
+          kind: 'reply',
+          source: 'user_input',
+        })
         return
       }
 
@@ -693,12 +728,18 @@ export function AgentPanel({
         if (value === 'radius') {
           setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
           explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
-          void append('반경을 바꿔볼게요.', undefined, { kind: 'reply' })
+          void append('반경을 바꿔볼게요.', undefined, {
+            kind: 'reply',
+            source: 'user_input',
+          })
           return
         }
 
         if (value === 'map') {
-          void append('지도에서 직접 확인할게요.', undefined, { kind: 'reply' })
+          void append('지도에서 직접 확인할게요.', undefined, {
+            kind: 'reply',
+            source: 'user_input',
+          })
           return
         }
       }
@@ -713,7 +754,10 @@ export function AgentPanel({
           markResponded()
           setExplorationState((prev) => ({ ...prev, radiusChanged: true }))
           explorationStateRef.current = { ...explorationStateRef.current, radiusChanged: true }
-          void append('반경을 더 바꿔볼게요.', undefined, { kind: 'reply' })
+          void append('반경을 더 바꿔볼게요.', undefined, {
+            kind: 'reply',
+            source: 'user_input',
+          })
           return
         }
 
@@ -798,6 +842,7 @@ export function AgentPanel({
                 userLocation: pos,
                 confirmedPosition: confirmed,
                 location: confirmed.dongName,
+                locationSource: 'geolocation',
                 dongCode: confirmed.dongCode,
               })
               appendBootstrapConversation(confirmed.dongName)
@@ -814,12 +859,13 @@ export function AgentPanel({
                 userLocation: pos,
                 confirmedPosition: fallbackPosition,
                 location: fallbackPosition.dongName,
+                locationSource: 'geolocation',
                 dongCode: fallbackPosition.dongCode,
               })
               appendBootstrapConversation(`좌표: ${pos.lat.toFixed(4)}, ${pos.lng.toFixed(4)}`)
             }
           } else {
-            void append('위치 권한을 허용하지 않았어요.')
+            void append('위치 권한을 허용하지 않았어요.', undefined, { kind: 'reply', source: 'system' })
           }
 
           setShowQuickStart(true)
@@ -835,6 +881,7 @@ export function AgentPanel({
             center: null,
             userLocation: null,
             location: null,
+            locationSource: null,
             dongCode: null,
             fullLocationName: null,
           })
@@ -856,7 +903,10 @@ export function AgentPanel({
             setAnalysisContext({ radius: 500 })
           }
 
-          void append(actionTextMap[action] ?? action)
+          void append(actionTextMap[action] ?? action, undefined, {
+            kind: 'reply',
+            source: 'user_input',
+          })
           break
         }
       }
@@ -905,6 +955,7 @@ export function AgentPanel({
           onExplorationQuickSelect={handleExplorationQuickSelect}
           onQuickReplySelect={handleQuickReplySelect}
           disabledQuickActionIds={disabledQuickActionIds}
+          usedQuickReplyTypes={usedQuickReplyTypes}
           hiddenIndustryPromptId={hiddenIndustryPromptId}
           isStreaming={isLoading}
           disableConfirm={geoStatus === 'loading'}

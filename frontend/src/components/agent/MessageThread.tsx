@@ -2,6 +2,7 @@
 
 import { useEffect, useRef } from 'react'
 import { AgentMessage, ChatMessage, ExplorationMessageType } from '@/types/message'
+import type { QuickReplyType } from '@/lib/quickReply'
 import { MessageBubble } from './MessageBubble'
 import { ToolCallCard } from './ToolCallCard'
 
@@ -16,10 +17,11 @@ interface MessageThreadProps {
   ) => void
   onQuickReplySelect?: (
     messageId: string,
-    type: 'operation' | 'breakeven' | 'differentiation' | 'radius' | 'report_offer',
+    type: QuickReplyType,
     option: { label: string; text: string; action?: 'generate_report' | 'dismiss' },
   ) => void
   disabledQuickActionIds?: Set<string>
+  usedQuickReplyTypes?: Set<QuickReplyType>
   hiddenIndustryPromptId?: string | null
   isStreaming?: boolean
   disableConfirm?: boolean
@@ -32,11 +34,18 @@ export function MessageThread({
   onExplorationQuickSelect,
   onQuickReplySelect,
   disabledQuickActionIds,
+  usedQuickReplyTypes,
   hiddenIndustryPromptId,
   isStreaming,
   disableConfirm,
 }: MessageThreadProps) {
   const bottomRef = useRef<HTMLDivElement>(null)
+  const lastAssistantMessageId = (() => {
+    for (let i = messages.length - 1; i >= 0; i -= 1) {
+      if (messages[i].role === 'agent') return messages[i].id
+    }
+    return null
+  })()
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
@@ -63,6 +72,8 @@ export function MessageThread({
             onExplorationQuickSelect={onExplorationQuickSelect}
             onQuickReplySelect={onQuickReplySelect}
             disabledQuickActionIds={disabledQuickActionIds}
+            usedQuickReplyTypes={usedQuickReplyTypes}
+            isLastAssistantMessage={msg.id === lastAssistantMessageId}
             hiddenIndustryPromptId={hiddenIndustryPromptId}
           />
         )
