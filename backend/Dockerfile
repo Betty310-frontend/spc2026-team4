@@ -13,6 +13,7 @@ ENV UV_PYTHON=/usr/local/bin/python3
 COPY pyproject.toml uv.lock README.md ./
 RUN uv sync --frozen --no-dev
 
+COPY chroma/ ./chroma/
 COPY app/ ./app/
 
 ENV PATH="/app/.venv/bin:$PATH"
